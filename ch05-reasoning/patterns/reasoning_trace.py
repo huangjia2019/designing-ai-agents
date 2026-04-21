@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-
 @dataclass
 class ReasoningTrace:
     """Observable record of reasoning decisions."""

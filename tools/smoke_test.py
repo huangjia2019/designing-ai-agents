@@ -27,9 +27,19 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
-for ch in sorted(REPO.iterdir()):
-    if ch.is_dir() and ch.name.startswith("ch"):
-        sys.path.insert(0, str(ch))
+# Files the book intentionally leaves with undefined names — pseudocode by design
+PEDAGOGICAL_FILES = {
+    "ch02-architecture/argus/runtime.py",  # supporting classes left unspecified
+    "ch02-architecture/patterns/openai_guardrails.py",  # callbacks are placeholder names
+}
+
+
+def chapter_root(path: Path) -> Path | None:
+    """Find the chNN-* ancestor for a given file."""
+    for parent in path.parents:
+        if parent.name.startswith("ch") and parent.parent == REPO:
+            return parent
+    return None
 
 
 def is_conceptual_fragment(path: Path) -> bool:
@@ -44,12 +54,21 @@ def is_conceptual_fragment(path: Path) -> bool:
 
 
 def try_import(path: Path) -> tuple[str, str]:
+    rel = str(path.relative_to(REPO))
+    if rel in PEDAGOGICAL_FILES:
+        return "PEDAGOGICAL", "intentionally undefined names per the book"
     if is_conceptual_fragment(path):
         return "CONCEPTUAL", "top-level `def f(self, ...)` — method fragments"
     spec = importlib.util.spec_from_file_location(f"_t_{path.stem}_{id(path)}", path)
     if not spec or not spec.loader:
         return "OTHER", "could not load spec"
     mod = importlib.util.module_from_spec(spec)
+    # Per-file sys.path isolation: only this chapter's root, mimicking how a
+    # reader would `cd ch04-memory && python argus/memory.py`.
+    chroot = chapter_root(path)
+    saved_path = sys.path[:]
+    if chroot:
+        sys.path = [str(chroot)] + [p for p in saved_path if "ch0" not in p]
     try:
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             spec.loader.exec_module(mod)
@@ -61,6 +80,8 @@ def try_import(path: Path) -> tuple[str, str]:
     except Exception as e:
         tb = traceback.format_exc().splitlines()[-1]
         return "OTHER", f"{type(e).__name__}: {tb}"
+    finally:
+        sys.path = saved_path
 
 
 def main() -> int:
@@ -81,7 +102,7 @@ def main() -> int:
         print(f"  {status:16s} {n}")
     print()
     print("═══ Details ═══")
-    marker = {"PASS": "✓", "CONCEPTUAL": "◇",
+    marker = {"PASS": "✓", "CONCEPTUAL": "◇", "PEDAGOGICAL": "◐",
               "NEEDS_CONTEXT": "⚠", "MISSING_IMPORT": "✗", "OTHER": "✗"}
     for f, status, detail in results:
         rel = f.relative_to(REPO)
@@ -89,7 +110,7 @@ def main() -> int:
         if detail and status != "PASS":
             print(f"       → {detail}")
 
-    return 0 if all(s in ("PASS", "CONCEPTUAL") for _, s, _ in results) else 1
+    return 0 if all(s in ("PASS", "CONCEPTUAL", "PEDAGOGICAL") for _, s, _ in results) else 1
 
 
 if __name__ == "__main__":

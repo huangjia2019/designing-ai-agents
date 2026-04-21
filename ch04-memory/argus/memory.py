@@ -1,19 +1,13 @@
-# argus/memory.py — Chapter 4 addition
-from __future__ import annotations
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from patterns.hierarchical_memory import HierarchicalMemory
-
+from patterns.hierarchical_memory import HierarchicalMemory
 
 class ArgusMemory:
     """Cross-session memory for the Argus code reviewer."""
 
-    def __init__(self, memory: "HierarchicalMemory"):
+    def __init__(self, memory: HierarchicalMemory):
         self.memory = memory
 
     def after_review(self, review_summary: str,
-                     project: str) -> None:
+                     project: str) -> None:  #A
         """Persist review findings for future sessions."""
         self.memory.add(
             content=f"[{project}] {review_summary}",
@@ -22,7 +16,7 @@ class ArgusMemory:
         )
         self.memory.consolidate()
 
-    def before_review(
+    def before_review(  #B
             self, project: str,
             diff_summary: str) -> list[str]:
         """Retrieve relevant past findings before starting."""
