@@ -28,3 +28,15 @@ def review(self, diff: str) -> ReviewResult:
         return self.review_with_reasoning(diff)  #C
     else:
         return self.deep_review(diff)        #D
+
+# Argus method: hypothesis testing for bug verification
+def verify_bug(self, suspicion: str, repo_path: str):
+    tester = HypothesisTester(
+        client=self.client,
+        execute_fn=lambda cmd: run_in_sandbox(  #A
+            cmd, repo_path),
+        max_iterations=5,  #B
+    )
+    return tester.investigate(  #C
+        f"Verify whether this is a real bug: {suspicion}"
+    )
