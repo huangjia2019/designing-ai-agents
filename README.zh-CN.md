@@ -4,6 +4,12 @@
 
 English: [README.md](README.md)
 
+> **想按双轴矩阵而不是按章节看每个模式？** 配套目录在
+> [**huangjia2019/agent-design-patterns**](https://github.com/huangjia2019/agent-design-patterns)
+> —— 28 个模式，每个按 7 × 6 矩阵坐标放置，每个独立可跑。本仓库按
+> 书的章节叙事组织（Argus 一章一章长出来）；那个仓库是你可以直接
+> 拎进项目用的模式参考。
+
 ---
 
 ## 目录结构

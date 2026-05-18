@@ -6,6 +6,14 @@ import cleanly on Python 3.12.
 
 中文版：[README.zh-CN.md](README.zh-CN.md)
 
+> **Looking for individual patterns, organized by the two-axis matrix
+> rather than by chapter?** See the companion catalog
+> [**huangjia2019/agent-design-patterns**](https://github.com/huangjia2019/agent-design-patterns)
+> — 28 patterns, each placed at a coordinate in the 7 × 6 framework,
+> each self-contained and runnable in isolation. This repo follows the
+> book's chapter-by-chapter narrative (Argus grows module by module);
+> that repo is the pattern reference you can drop into a project today.
+
 ---
 
 ## Layout
