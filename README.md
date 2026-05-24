@@ -1,10 +1,10 @@
 # Designing AI Agents — Source Code
 
-<a href="https://www.manning.com/books/designing-ai-agents">
-  <img src="./docs/manning-book-card.png" alt="Designing AI Agents — Manning Publications, MEAP" width="480">
+<a href="https://hubs.la/Q04hCsH10">
+  <img src="./docs/manning-book-card.png" alt="Designing AI Agents — Manning" width="480">
 </a>
 
-**[Designing AI Agents — Manning Publications](https://www.manning.com/books/designing-ai-agents)** · Jia Huang · MEAP open · ISBN 9781633433632
+**[*Designing AI Agents*](https://hubs.la/Q04hCsH10)** — the design-pattern catalogue for production AI agents. (Manning)
 
 This repository is the official source code for the book — every listing,
 organized by chapter, verified to import cleanly on Python 3.12.
