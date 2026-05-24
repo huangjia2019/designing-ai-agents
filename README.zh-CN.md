@@ -1,6 +1,12 @@
 # Designing AI Agents — 配套代码
 
-《Designing AI Agents》（Manning，2027 年出版）配套代码，作者黄佳。
+<a href="https://www.manning.com/books/designing-ai-agents">
+  <img src="./docs/manning-book-card.png" alt="Designing AI Agents — Manning Publications, MEAP" width="480">
+</a>
+
+**[Designing AI Agents — Manning Publications](https://www.manning.com/books/designing-ai-agents)** · 黄佳 · MEAP 已开放 · ISBN 9781633433632
+
+本仓库是这本书的官方源码——每个 listing 按章节组织，全部在 Python 3.12 上验证可导入。
 
 English: [README.md](README.md)
 

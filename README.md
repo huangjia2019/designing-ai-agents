@@ -1,8 +1,13 @@
 # Designing AI Agents — Source Code
 
-Companion code for **Designing AI Agents** (Manning, forthcoming 2027) by
-Jia Huang. Every listing in the book, organized by chapter, verified to
-import cleanly on Python 3.12.
+<a href="https://www.manning.com/books/designing-ai-agents">
+  <img src="./docs/manning-book-card.png" alt="Designing AI Agents — Manning Publications, MEAP" width="480">
+</a>
+
+**[Designing AI Agents — Manning Publications](https://www.manning.com/books/designing-ai-agents)** · Jia Huang · MEAP open · ISBN 9781633433632
+
+This repository is the official source code for the book — every listing,
+organized by chapter, verified to import cleanly on Python 3.12.
 
 中文版：[README.zh-CN.md](README.zh-CN.md)
 
