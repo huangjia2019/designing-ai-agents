@@ -6,18 +6,67 @@
 
 **[*Designing AI Agents*](https://hubs.la/Q04hCsH10)** — the design-pattern catalogue for production AI agents. (Manning)
 
-This repository is the official source code for the book — every listing,
-organized by chapter, verified to import cleanly on Python 3.12.
+This repository is the official source code for the book. It contains two
+tracks living side by side inside each chapter:
+
+- **`argus/`** — Argus, the running-example PR-review agent, evolves
+  **cumulatively** from Ch2 to Ch10. Each chapter adds **one cognitive
+  module** and ships a self-contained snapshot that imports as
+  `from argus import ...` so the reader runs the chapter's Argus directly:
+  `python -m argus.cli <diff> --project <name>`.
+- **`patterns/`** — independent pattern demos for everything the chapter
+  introduces. Not every pattern integrates into Argus (Willem Jiang's Ch6/Ch7
+  feedback). Those patterns live here as runnable references.
 
 中文版：[README.zh-CN.md](README.zh-CN.md)
 
-> **Looking for individual patterns, organized by the two-axis matrix
-> rather than by chapter?** See the companion catalog
+> Need a separate **pattern-only catalog organized by the two-axis matrix
+> instead of by chapter?** See
 > [**huangjia2019/agent-design-patterns**](https://github.com/huangjia2019/agent-design-patterns)
-> — 28 patterns, each placed at a coordinate in the 7 × 6 framework,
-> each self-contained and runnable in isolation. This repo follows the
-> book's chapter-by-chapter narrative (Argus grows module by module);
-> that repo is the pattern reference you can drop into a project today.
+> (ADPS asset, not part of the book).
+
+---
+
+## Argus evolution at a glance
+
+| Chapter | Argus += | Module added | What you can run |
+|---------|----------|--------------|------------------|
+| Ch2 architecture     | single-pass PRA loop                | `argus/core.py`           | (seed; one LLM call) |
+| Ch3 perception       | + gather & triage code context      | `argus/perception.py`     | `python -m argus.cli <diff>` |
+| Ch4 memory           | + cross-session memory (RAG)        | `argus/memory.py`         | `... --project myapp` |
+| Ch5 reasoning        | + complexity-routed CoT             | `argus/reasoning.py`      | tier=simple/moderate/complex |
+| Ch6 action           | + tool dispatch + Guardrail Sandwich | `argus/action.py`         | lint / test / fix_apply |
+| Ch7 reflection       | + critic loop + skill library + experience | `argus/reflection.py` + `argus/self_heal.py` | refined verdict, fewer false positives |
+| Ch8 collaboration    | + parallel sub-agents (security/style/complexity) | `argus/collaboration.py` | fan-out + synthesis |
+| Ch9 governance       | + permission gate + audit log + trust | `argus/governance.py`    | tamper-evident audit chain |
+| Ch10 capstone        | composition — orchestrator wires all 7 modules | `argus/orchestrator.py` | full review with every trace |
+
+Each chapter's `argus/` directory is a **self-contained snapshot**: it
+carries forward the previous chapter's modules so you can `cd ch07-reflection`
+and `python -m argus.cli` without needing chapters 2-6 on the path. This
+trades some duplication for pedagogical clarity.
+
+---
+
+## Quick start
+
+```bash
+# Run the capstone Argus on a real diff (offline-safe, no API key needed):
+cd ch10-methodology
+python3 demos/demo_end_to_end_review.py
+
+# Token-waste story (Ch5): 81% savings from complexity routing
+python3 demos/demo_token_waste_story.py
+
+# Scope-creep story (Ch6): Guardrail Sandwich blocks 2/3 over-scoped fixes
+python3 demos/demo_scope_creep_story.py
+
+# Critic-loop story (Ch7): Argus PR #4287 — generator-critic 5→3 issues
+python3 demos/demo_critic_loop_story.py
+```
+
+For real LLM responses, set `ANTHROPIC_API_KEY` and the demos transparently
+switch from the offline shim to live Sonnet calls.
 
 ---
 
@@ -25,99 +74,57 @@ organized by chapter, verified to import cleanly on Python 3.12.
 
 ```
 designing-ai-agents/
-├── ch01-paradigm-shift/     Chapter 1 — conceptual contrast (no API)
-├── ch02-architecture/       Chapter 2 — PRA loop, Runtime VM, cross-framework
-├── ch03-perception/         Chapter 3 — 4 perception patterns + Argus integration
-├── ch04-memory/             Chapter 4 — 4 memory patterns + Argus integration
-└── ch05-reasoning/          Chapter 5 — 4 reasoning patterns + Argus integration
+├── ch01-paradigm-shift/     Ch1 — conceptual contrast (no API)
+├── ch02-architecture/       Ch2 — Argus seed: 38-line PRA loop, cross-framework demos
+├── ch03-perception/         Ch3 — Argus += eyes (perception triage under budget)
+├── ch04-memory/             Ch4 — Argus += past (RAG over project history)
+├── ch05-reasoning/          Ch5 — Argus += calibrated thinking (complexity routing)
+├── ch06-action/             Ch6 — Argus += hands (tools through Guardrail Sandwich)
+├── ch07-reflection/         Ch7 — Argus += self-improvement (critic + skills + replay)
+├── ch08-collaboration/      Ch8 — Argus += parallel specialists (security/style/complexity)
+├── ch09-governance/         Ch9 — Argus += trust accounting + audit chain
+├── ch10-methodology/        Ch10 — capstone: orchestrator + 4 end-to-end demos
+├── tools/smoke_test.py      Smoke test runner (import-clean across all chapters)
+└── docs/                    Book card + blueprint + design notes
 ```
 
-Each chapter is independent. Inside, two sibling directories:
+Inside every `chNN-*/`:
 
-- **`patterns/`** — one pattern per file, no framework coupling. Accepts a
-  pluggable `llm` / `vector_db` via the constructor.
-- **`argus/`** — cumulative snapshot of *Argus*, the running-example code
-  reviewer that grows module by module from Ch2 to Ch10.
+```
+argus/        cumulative Argus snapshot for this chapter
+patterns/     independent pattern demos (the rest of the chapter's listings)
+demos/        optional cross-framework / story-driven scripts (Ch2, Ch10)
+```
 
-## Install
+---
+
+## Requirements
 
 ```bash
-git clone https://github.com/huangjia2019/designing-ai-agents
-cd designing-ai-agents
-python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # then fill in your ANTHROPIC_API_KEY / OPENAI_API_KEY
 ```
 
-Requires Python **3.10+** (the book uses 3.12).
+`anthropic` is the only hard dependency to run the cli/demos against a
+live model. `patterns/hierarchical_memory.py` expects a `vector_db` argument
+with `.search(query, top_k)` and `.upsert(text, metadata)` methods — the
+demos ship a tiny `_Stub` so they run offline; in production swap with
+`chromadb` / `qdrant` / `faiss`.
 
-## Run
+---
 
-Most pattern files are self-contained. Change into a chapter and run:
+## Design principles in this repo
 
-```bash
-cd ch03-perception
-python patterns/context_triage.py    # pure-Python, no API key
-```
+1. **Cumulative Argus**: each chapter's `argus/core.py` builds on the prior
+   chapter. Reading `ch10/argus/orchestrator.py` you see the §10.10 promise
+   "every method call maps to a working class from Ch3-Ch9" — cashed.
+2. **Two tracks per chapter**: `argus/` (composition into Argus) and
+   `patterns/` (independent demos). Not every pattern integrates into the
+   coding-agent storyline — that's by design (Willem Jiang's feedback).
+3. **Offline-safe**: every demo runs without an API key by falling back
+   to deterministic shims; set `ANTHROPIC_API_KEY` to switch to live.
+4. **Observable**: every cognitive module emits a `Trace` dataclass.
+   Ch10's `OrchestrationResult` aggregates them — perception trace,
+   action log, reflection meta, collaboration meta, governance meta.
 
-Files that call an LLM look for `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`
-for the OpenAI-SDK demos). They will import cleanly without the key, but
-`main()` execution needs one.
-
-## How the book maps to the code
-
-| Book chapter | Repo directory | Listings |
-|--------------|----------------|----------|
-| 1. Paradigm shift | `ch01-paradigm-shift/` | illustrative only |
-| 2. Agent architecture | `ch02-architecture/` | 2.1 – 2.6 |
-| 3. Perception | `ch03-perception/` | 3.1 – 3.5e |
-| 4. Memory | `ch04-memory/` | 4.1 – 4.8 |
-| 5. Reasoning | `ch05-reasoning/` | 5.1 – 5.5c |
-
-Per-chapter READMEs map each listing to its file. Chapters 6-10 will land
-as the manuscript completes review.
-
-## A few files are deliberately *not* runnable
-
-The book includes some architectural sketches and method-fragment snippets
-that do not stand alone:
-
-- `ch02-architecture/argus/runtime.py` — references supporting classes
-  (`RuntimeConfig`, `Sandbox`, `MCPHost`, ...) that the book never
-  defines. Treat as structural pseudocode.
-- `ch05-reasoning/argus/reasoning.py` — three snippets (Listings 5.2b,
-  5.3b, 5.5c) that belong inside an `Argus` class. Conceptual reference.
-
-Both files have a docstring header marking them as such. The other 21
-Python files in Ch1-5 import cleanly with no side effects.
-
-## Verification
-
-All Python files are tested at extraction time:
-
-- syntax check (AST parse)
-- import check (module body executes without error)
-- `[CA]` typesetter-continuation markers stripped automatically
-
-Status: **22 runnable / 23 total** (one conceptual by design). Run the
-smoke test yourself:
-
-```bash
-python3 tools/smoke_test.py
-```
-
-## License
-
-MIT. See [LICENSE](LICENSE).
-
-## Citation
-
-If this code helps your work, cite the book:
-
-> Huang, Jia. *Designing AI Agents*. Manning Publications, forthcoming 2027.
-
-## Contact
-
-- Book errata & discussion: [Manning liveBook forum](https://livebook.manning.com/) (after MEAP launch)
-- Repo issues: GitHub Issues on this repository
-- Author: [@huangjia2019](https://github.com/huangjia2019)
+See [`docs/BLUEPRINT-2026-06-17.md`](docs/BLUEPRINT-2026-06-17.md) for the
+full design rationale and the Ch1→Ch10 evolution plan.

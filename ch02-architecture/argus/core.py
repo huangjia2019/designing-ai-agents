@@ -1,5 +1,4 @@
 # argus/core.py — The simplest possible code review agent
-import anthropic
 import json
 
 def review_diff(diff: str, context: str = "") -> dict:
@@ -9,6 +8,7 @@ def review_diff(diff: str, context: str = "") -> dict:
     Reasoning:  Claude analyzes the diff
     Action:     structured review output
     """
+    import anthropic  # lazy: keep module importable without LLM SDK installed
     client = anthropic.Anthropic()
 
     # --- PERCEPTION: assemble  #A
@@ -24,7 +24,7 @@ Respond with JSON: {"summary": "...", "comments": [
 
     # --- REASONING: Claude analyzes ---  #B
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-4-5-20250929",
         max_tokens=2048,
         system=system,
         messages=[{"role": "user", "content": user_msg}],

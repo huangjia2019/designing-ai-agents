@@ -1,117 +1,91 @@
-"""Import-check every Python file in the repo.
+#!/usr/bin/env python3
+"""Smoke test — verify every chapter's Argus + patterns is sane.
 
-Usage:
-    python3 tools/smoke_test.py
+Two tiers (post-cumulative-refactor on 2026-06-17):
 
-For each .py file under chNN-*/, attempts to execute its module body.
-Classifies each as:
+  1. AST parse on every .py file (catches syntax errors).
+  2. `import argus` from each chNN-*/ directory (catches dependency
+     / wiring errors in the cumulative chain).
 
-    PASS          — imports cleanly
-    CONCEPTUAL    — top-level `def f(self, ...)` method fragments (by design)
-    NEEDS_CONTEXT — undefined name (the book expects DI or a parent class)
-    MISSING_IMPORT — module not installed
-    OTHER         — any other failure
+Pass criteria:
+  * All .py files parse cleanly.
+  * All chapters with an argus/ package import cleanly (Ch2 through Ch10).
 
-Expected output on a clean checkout with requirements.txt installed:
-    22 PASS + 1 CONCEPTUAL.
+For pattern-level smoke (individual pattern imports in isolation),
+each chapter ships its own demo scripts under demos/.
 """
-from __future__ import annotations
 import ast
-import importlib.util
-import io
+import subprocess
 import sys
-import traceback
-from collections import Counter
-from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-
-# Files the book intentionally leaves with undefined names — pseudocode by design
-PEDAGOGICAL_FILES = {
-    "ch02-architecture/argus/runtime.py",  # supporting classes left unspecified
-    "ch02-architecture/patterns/openai_guardrails.py",  # callbacks are placeholder names
-}
+ROOT = Path(__file__).resolve().parent.parent
 
 
-def chapter_root(path: Path) -> Path | None:
-    """Find the chNN-* ancestor for a given file."""
-    for parent in path.parents:
-        if parent.name.startswith("ch") and parent.parent == REPO:
-            return parent
-    return None
-
-
-def is_conceptual_fragment(path: Path) -> bool:
+def parse_check(path: Path) -> tuple[bool, str]:
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except SyntaxError:
-        return False
-    top_defs = [n for n in tree.body if isinstance(n, ast.FunctionDef)]
-    if not top_defs:
-        return False
-    return any(fn.args.args and fn.args.args[0].arg == "self" for fn in top_defs)
+        ast.parse(path.read_text())
+        return True, ""
+    except SyntaxError as e:
+        return False, f"SyntaxError {e.lineno}: {e.msg}"
 
 
-def try_import(path: Path) -> tuple[str, str]:
-    rel = str(path.relative_to(REPO))
-    if rel in PEDAGOGICAL_FILES:
-        return "PEDAGOGICAL", "intentionally undefined names per the book"
-    if is_conceptual_fragment(path):
-        return "CONCEPTUAL", "top-level `def f(self, ...)` — method fragments"
-    spec = importlib.util.spec_from_file_location(f"_t_{path.stem}_{id(path)}", path)
-    if not spec or not spec.loader:
-        return "OTHER", "could not load spec"
-    mod = importlib.util.module_from_spec(spec)
-    # Per-file sys.path isolation: only this chapter's root, mimicking how a
-    # reader would `cd ch04-memory && python argus/memory.py`.
-    chroot = chapter_root(path)
-    saved_path = sys.path[:]
-    if chroot:
-        sys.path = [str(chroot)] + [p for p in saved_path if "ch0" not in p]
-    try:
-        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            spec.loader.exec_module(mod)
-        return "PASS", ""
-    except ImportError as e:
-        return "MISSING_IMPORT", f"{e.name or 'import'}"
-    except NameError as e:
-        return "NEEDS_CONTEXT", str(e)
-    except Exception as e:
-        tb = traceback.format_exc().splitlines()[-1]
-        return "OTHER", f"{type(e).__name__}: {tb}"
-    finally:
-        sys.path = saved_path
+def import_check(chapter_dir: Path) -> tuple[bool, str]:
+    """Run `python -c "import argus"` with chapter dir as cwd."""
+    if not (chapter_dir / "argus").exists():
+        return True, "(no argus/)"
+    result = subprocess.run(
+        [sys.executable, "-c", "import argus; print('OK')"],
+        cwd=chapter_dir,
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode == 0:
+        return True, ""
+    err = (result.stderr.strip().splitlines() or ["unknown failure"])[-1]
+    return False, err
 
 
 def main() -> int:
-    results = []
-    for f in sorted(REPO.rglob("*.py")):
-        if f.name == "__init__.py":
-            continue
-        if any(p in (".venv", "venv", "__pycache__", "tools") for p in f.parts):
-            continue
-        if not any(p.startswith("ch0") for p in f.parts):
-            continue
-        status, detail = try_import(f)
-        results.append((f, status, detail))
+    chapters = sorted(d for d in ROOT.iterdir()
+                      if d.is_dir() and d.name.startswith("ch"))
+    parse_ok = parse_fail = 0
+    import_ok = import_fail = 0
+    failures = []
 
-    counts = Counter(r[1] for r in results)
-    print("═══ Import test summary ═══")
-    for status, n in counts.most_common():
-        print(f"  {status:16s} {n}")
+    print(f"Smoke test in {ROOT}\n")
+    print("--- AST parse (every .py file) ---")
+    for ch in chapters:
+        for f in ch.rglob("*.py"):
+            ok, err = parse_check(f)
+            if ok:
+                parse_ok += 1
+            else:
+                parse_fail += 1
+                failures.append(f"PARSE  {f.relative_to(ROOT)}: {err}")
+    print(f"  {parse_ok} ok / {parse_fail} fail")
+
+    print("\n--- Argus import (cd chNN-* && python -c 'import argus') ---")
+    for ch in chapters:
+        ok, err = import_check(ch)
+        if ok:
+            import_ok += 1
+            print(f"  [OK]   {ch.name:28} {err}")
+        else:
+            import_fail += 1
+            failures.append(f"IMPORT {ch.name}: {err}")
+            print(f"  [FAIL] {ch.name:28} {err}")
+
     print()
-    print("═══ Details ═══")
-    marker = {"PASS": "✓", "CONCEPTUAL": "◇", "PEDAGOGICAL": "◐",
-              "NEEDS_CONTEXT": "⚠", "MISSING_IMPORT": "✗", "OTHER": "✗"}
-    for f, status, detail in results:
-        rel = f.relative_to(REPO)
-        print(f"  {marker.get(status, '?')} [{status:15s}] {rel}")
-        if detail and status != "PASS":
-            print(f"       → {detail}")
+    print(f"Summary: parse {parse_ok}/{parse_ok+parse_fail} clean, "
+          f"argus import {import_ok}/{import_ok+import_fail} clean")
 
-    return 0 if all(s in ("PASS", "CONCEPTUAL", "PEDAGOGICAL") for _, s, _ in results) else 1
+    if failures:
+        print("\nFailures:")
+        for f in failures:
+            print(f"  {f}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

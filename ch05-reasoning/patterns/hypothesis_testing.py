@@ -1,6 +1,10 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from anthropic import Anthropic
+# anthropic is lazy-imported inside functions that need a live client
+try:
+    from anthropic import Anthropic
+except ImportError:
+    Anthropic = object  # type: ignore[misc,assignment]
 
 class HypothesisStatus(Enum):
     ACTIVE = "active"
