@@ -1,9 +1,11 @@
 """Plan-and-Execute — split planning from execution.
 
-The Planner (expensive call, runs once) produces a list of subtasks. The
-Executor (cheap calls, runs many times) handles each subtask, with the
+The Planner (expensive call, runs once) produces a list of subtasks. A
+Subagent (cheap calls, runs many times) handles each subtask, with the
 option to replan if a step fails. Cost split: one expensive plan, many
-cheap executions.
+cheap executions. The 2026 vocabulary for these cheap workers is
+"subagent" (Anthropic, Claude Code, LangChain, DeerFlow); older sources
+sometimes call them "executors."
 """
 from dataclasses import dataclass, field
 from typing import Callable
@@ -36,7 +38,7 @@ class Plan:
 
 
 def execute_plan(plan: Plan,
-                 executor: Callable[[Subtask], tuple[str | None, str | None]],
+                 subagent: Callable[[Subtask], tuple[str | None, str | None]],
                  max_iterations: int = 50) -> Plan:
     """Run subtasks in dependency order until done or stuck."""
     for _ in range(max_iterations):
@@ -45,7 +47,7 @@ def execute_plan(plan: Plan,
             break
         for st in ready:
             st.status = "running"
-            result, error = executor(st)
+            result, error = subagent(st)
             if error:
                 st.status = "failed"
                 st.error = error
