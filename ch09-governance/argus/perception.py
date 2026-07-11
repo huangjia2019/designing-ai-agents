@@ -100,7 +100,9 @@ def gather_review_context(
     return selected, trace
 
 def _extract_modified_files(diff: str) -> list[str]:
-    return re.findall(r'^(?:\+\+\+|---) [ab]/(.+)$', diff, re.MULTILINE)  #A
+    matches = re.findall(r'^(?:\+\+\+|---) [ab]/(.+)$',
+                         diff, re.MULTILINE)  #A
+    return list(dict.fromkeys(matches))
 
 def _find_imports(source: str) -> list[str]:
     imports = []
