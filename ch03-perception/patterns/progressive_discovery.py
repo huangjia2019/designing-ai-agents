@@ -57,12 +57,16 @@ class ProgressiveDiscovery:
                 contents: List[str]) -> List[str]:  #E
         """Phase 3: Follow imports found in focused reads."""
         import re
+        deepened = 0
         for content in list(contents):
             for match in re.finditer(
                 r'^(?:from|import)\s+([\w.]+)', content, re.MULTILINE
             ):
+                if deepened >= self.limits[2]:
+                    return contents
                 path = match.group(1).replace(".", "/") + ".py"
-                if self.tools.exists(path) and self.limits[2] > 0:
+                if self.tools.exists(path):
                     contents.append(f"### {path} (import)\n"
                                     f"{self.tools.read(path)}")
+                    deepened += 1
         return contents

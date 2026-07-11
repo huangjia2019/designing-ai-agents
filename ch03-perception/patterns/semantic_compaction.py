@@ -18,26 +18,27 @@ class SemanticCompactor:
         if total <= target:
             return turns  #B
 
-        # Split: old compactable vs protected (recent + errors)
+        # Split: old compactable vs protected recent tail
         boundary = len(turns) - self.preserve_recent
-        old = [t for t in turns[:boundary] if not t.is_error]
-        errors = [t for t in turns[:boundary]
-                  if t.is_error]  #C
+        old = turns[:boundary]
         recent = turns[boundary:]
 
-        # Level 1: Clear verbose tool results
+        # Level 1: Clear verbose tool results in place (errors stay untouched)
         cleared = self._clear_tools(old)
-        if self._fits(cleared + errors + recent, target):
-            return cleared + errors + recent
+        if self._fits(cleared + recent, target):
+            return cleared + recent
 
-        # Level 2: Summarize old turns into one block
-        summary = self._summarize(old)  #D
+        # Level 2: Summarize non-error turns; errors survive in order
+        non_errors = [t for t in old if not t.is_error]
+        errors = [t for t in old if t.is_error]  #C
+        summary = self._summarize(non_errors)  #D
         return [summary] + errors + recent
 
     def _clear_tools(self, turns):
         result = []
         for t in turns:
-            if t.role == "tool_result" and t.tokens > 500:
+            if (t.role == "tool_result" and t.tokens > 500
+                    and not t.is_error):
                 result.append(Turn(
                     "tool_result",
                     f"[Cleared: {t.tokens} tokens. Re-run to retrieve.]",
