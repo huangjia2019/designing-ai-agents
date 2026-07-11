@@ -38,16 +38,16 @@ Respond with JSON: {"summary": "...", "comments": [
 
 
 if __name__ == "__main__":
-    # Minimal end-to-end demo for §2.6.2.
+    # Minimal end-to-end demo for §2.6.2 — the diff hides a deliberate
+    # SQL injection at app.py line 42; Argus should flag it as critical.
     # Requires: pip install anthropic; export ANTHROPIC_API_KEY=sk-ant-...
-    SAMPLE_DIFF = """--- a/greet.py
-+++ b/greet.py
-@@ -1,3 +1,5 @@
- def greet(name):
--    return f"Hello, {name}"
-+    if not name:
-+        return "Hello, stranger"
-+    return f"Hello, {name}!"
+    SAMPLE_DIFF = """--- a/app.py
++++ b/app.py
+@@ -41,3 +41,3 @@ def get_user(db, username):
+     cursor = db.cursor()
+-    cursor.execute("SELECT * FROM users WHERE name = ?", (username,))
++    cursor.execute(f"SELECT * FROM users WHERE name = '{username}'")
+     return cursor.fetchone()
 """
     review = review_diff(SAMPLE_DIFF)
     print(json.dumps(review, indent=2))
