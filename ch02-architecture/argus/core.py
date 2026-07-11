@@ -35,3 +35,19 @@ Respond with JSON: {"summary": "...", "comments": [
     if "```json" in text:
         text = text.split("```json")[1].split("```")[0]
     return json.loads(text)
+
+
+if __name__ == "__main__":
+    # Minimal end-to-end demo for §2.6.2.
+    # Requires: pip install anthropic; export ANTHROPIC_API_KEY=sk-ant-...
+    SAMPLE_DIFF = """--- a/greet.py
++++ b/greet.py
+@@ -1,3 +1,5 @@
+ def greet(name):
+-    return f"Hello, {name}"
++    if not name:
++        return "Hello, stranger"
++    return f"Hello, {name}!"
+"""
+    review = review_diff(SAMPLE_DIFF)
+    print(json.dumps(review, indent=2))
