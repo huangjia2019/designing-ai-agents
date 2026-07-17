@@ -3,12 +3,20 @@
 # Cumulative evolution from Ch8:
 #   Ch8 added collaboration (parallel sub-agents).
 #   Ch9 adds the governance layer. Every action that touches the world
-#   (tools, file writes, network calls) goes through:
-#     1. permission check (capability-based ACL)
-#     2. policy evaluation (declarative rules)
-#     3. audit log entry (append-only, hash-chained)
-#   Trust updates after each action — promotions earn new capabilities,
-#   blocked or failed actions cost capability.
+#   (tools, file writes, network calls) goes through the single
+#   ArgusGovernance.run_tool() chokepoint of Listings 9.16-9.17:
+#     1. Approval Gate        — allow / deny / ask (§9.2)
+#     2. Progressive Commitment — does 'ask' still need a human? (§9.4)
+#     3. Blast Radius Control — tool allowlist, paths, rate, budget (§9.3)
+#     4. Observability Harness — record the call and the outcome (§9.5)
+#   Trust updates on every outcome, so each decision is made on the
+#   evidence of the last one.
+#
+# Approval note: run_command is classified HIGH risk, and at the default
+# SUPERVISED trust level a HIGH-risk action needs a human. Pass an
+# `ask_human(action, reason) -> bool` approver to let lint actually run,
+# or start governance at TrustLevel.AUTONOMOUS. With no approver the
+# gate declines, which is the safe default rather than a bug.
 
 from .perception import gather_review_context, PerceptionTrace, FileContext
 from .memory import ArgusMemory
@@ -18,7 +26,26 @@ from .reflection import ArgusReflection
 from .collaboration import ArgusCollaboration
 from .governance import ArgusGovernance
 
-from patterns.permission_gate import Capability
+
+def _governance_meta(governance: ArgusGovernance, **extra) -> dict:
+    """Roll the control plane's state into the Ch9 gov_meta dict.
+
+    promotions/demotions are counted off the TrustManager's level_history
+    rather than kept as standalone counters — the history is the record.
+    """
+    history = governance.trust.level_history
+    meta = {
+        "audit_entries": len(governance.gate.audit_log),
+        "current_trust": governance.trust.level.value,
+        "promotions": sum(
+            1 for _, why in history if why.startswith("escalated")
+        ),
+        "demotions": sum(
+            1 for _, why in history if why.startswith("demoted")
+        ),
+    }
+    meta.update(extra)
+    return meta
 
 
 def review_diff(
@@ -33,6 +60,7 @@ def review_diff(
     repo_root: str = ".",
     budget: int = 50_000,
     delegate_complex: bool = True,
+    ask_human=None,
 ):
     """Argus Ch9: + governance.
 
@@ -43,14 +71,21 @@ def review_diff(
     reflection = reflection or ArgusReflection()
     collaboration = collaboration or ArgusCollaboration()
     governance = governance or ArgusGovernance()
+    governance.start_review(project)
 
     # --- GOVERNANCE pre-check: is reading the repo allowed? ---
-    auth = governance.authorize("perceive", Capability.READ_FILES, {"repo": repo_root})
-    if not auth.allowed:
-        return None, None, [], {}, {}, {
-            "allowed": False, "reason": auth.reason,
-            "audit_size": len(governance.audit.entries),
-        }
+    # 'read_file' is matched by the gate's read_* allow rule and sits in
+    # the sandbox tool allowlist, so perception clears without a prompt.
+    perceive = governance.run_tool(
+        "read_file", {"repo": repo_root},
+        execute_fn=lambda tool, args: {"repo": args["repo"]},
+        ask_human=ask_human,
+    )
+    if "error" in perceive:
+        return None, None, [], {}, {}, _governance_meta(
+            governance, allowed=False, reason=perceive["error"],
+            audit_size=len(governance.gate.audit_log),
+        )
     selected, p_trace = gather_review_context(diff, repo_root, budget)
     past = memory.before_review(project=project, diff_summary=diff[:300].replace("\n", " "))
 
@@ -61,23 +96,37 @@ def review_diff(
         sub_synthesis = collaboration.parallel_review(diff)
         collab_meta = {
             "delegated": True,
-            "parallel_calls": collaboration.trace.parallel_calls,
-            "messages": len(collaboration.trace.messages),
+            "agents": collaboration.trace.agent_count,
+            "token_multiplier": round(collaboration.trace.token_multiplier, 2),
+            "handoff_fidelity": round(collaboration.trace.handoff_fidelity, 2),
+            "wall_time_ms": collaboration.trace.wall_time_ms,
         }
 
-    # --- ACTION (Ch6) — gated by Ch9 governance check ---
+    # --- ACTION (Ch6) — routed through the Ch9 governance chokepoint ---
+    # run_tool records the trust outcome itself, so there is no separate
+    # report_outcome call: success is simply 'no error came back'.
     action_evidence = []
-    lint_auth = governance.authorize("run_lint", Capability.RUN_LINT, {"repo": repo_root})
-    if lint_auth.allowed:
-        lint_trace = action.run_lint(repo_root=repo_root)
-        governance.report_outcome(
-            success=not lint_trace.guardrail_blocked and not lint_trace.error,
-            blocked=lint_trace.guardrail_blocked,
+
+    def _lint(tool: str, args: dict) -> dict:
+        trace = action.run_lint(repo_root=args["repo"])
+        if trace.guardrail_blocked:
+            return {"error": f"guardrail: {trace.guardrail_reason}"}
+        if trace.error:
+            return {"error": trace.error}
+        return {"trace": trace}
+
+    lint_result = governance.run_tool(
+        "run_command", {"cmd": "lint", "repo": repo_root},
+        execute_fn=_lint, ask_human=ask_human,
+    )
+    if "error" in lint_result:
+        action_evidence.append(
+            f"lint: blocked by governance ({lint_result['error']})"
         )
-        if lint_trace.output:
-            action_evidence.append(f"lint: rc={lint_trace.output.get('returncode')}")
-    else:
-        action_evidence.append(f"lint: blocked by governance ({lint_auth.reason})")
+    elif lint_result["trace"].output:
+        action_evidence.append(
+            f"lint: {str(lint_result['trace'].output)[:200]}"
+        )
 
     sections = []
     if past:           sections.append("### Past lessons\n" + "\n".join(f"- {l}" for l in past))
@@ -100,17 +149,14 @@ def review_diff(
     result.verdict = refined["output"]
     result.confidence = min(result.confidence, refined["final_score"])
 
-    governance.report_outcome(success=refined["converged"])
+    governance.trust.record_action(success=refined["converged"])
     reflection.record_outcome(task=f"review:{project}", succeeded=refined["converged"])
     memory.after_review(review_summary=result.verdict[:200], project=project)
 
-    chain_ok, chain_len = governance.audit.verify_chain()
-    gov_meta = {
-        "allowed": True,
-        "audit_entries": chain_len,
-        "audit_chain_ok": chain_ok,
-        "current_trust": governance.current_trust().level.value,
-        "promotions": governance.trace.promotions,
-        "demotions": governance.trace.demotions,
-    }
+    # Close the trace; finish_review returns the Observability dashboard
+    # (§9.5), which replaces the old hash-chained audit summary.
+    dashboard = governance.finish_review(success=refined["converged"])
+    gov_meta = _governance_meta(
+        governance, allowed=True, dashboard=dashboard,
+    )
     return result, p_trace, action.action_log, reflection_meta, collab_meta, gov_meta

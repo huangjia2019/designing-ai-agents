@@ -1,12 +1,72 @@
-"""MCP Client — Model Context Protocol client stub.
+"""MCP Client — dynamic tool discovery over the Model Context Protocol.
 
-Real MCP integration lives in the anthropic SDK or langchain-mcp-adapters.
-This stub mirrors the surface so book examples can demonstrate the shape
-without needing a running MCP server. Swap with a real client in
-production.
+Book: Chapter 6, Listing 6.6 (`connect_mcp_server`).
+
+MCP is JSON-RPC 2.0 over stdio or HTTP. `connect_mcp_server` launches a
+server process, initializes a session, asks the server what tools it has,
+and converts the returned schemas into the shape the Anthropic Messages API
+expects. Discovery happens when the coroutine is awaited, never at import
+time: this module opens no connection and constructs no client on import.
+
+`MCPTool` / `MCPClient` at the bottom are an offline stub from an earlier
+draft. No chapter imports them. They are retained pending an author call on
+whether an offline surface is still wanted for demos with no live server.
 """
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+try:  # keeps this module importable without the SDK installed
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+except ImportError:  # pragma: no cover
+    ClientSession = None
+    StdioServerParameters = None
+    stdio_client = None
+
+
+async def connect_mcp_server(
+    server_command: str,
+    args: list[str],
+) -> dict:
+    """Discover tools from MCP server.
+
+    Spawns `server_command args...` as an MCP stdio server, initializes the
+    session, and returns its tools already converted to Anthropic tool
+    schemas. The connection is opened and closed inside this call.
+    """
+    if stdio_client is None:  # pragma: no cover
+        raise RuntimeError(
+            "connect_mcp_server needs the MCP SDK: pip install mcp"
+        )
+
+    server_params = StdioServerParameters(
+        command=server_command, args=args,
+    )
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+
+            anthropic_tools = [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.inputSchema,
+                }
+                for tool in tools.tools
+            ]
+
+            return {
+                "server": server_command,
+                "tools": anthropic_tools,
+                "tool_count": len(anthropic_tools),
+            }
+
+
+# ---------------------------------------------------------------------------
+# Offline stub — not imported by any chapter. See the module docstring.
+# ---------------------------------------------------------------------------
 
 
 @dataclass

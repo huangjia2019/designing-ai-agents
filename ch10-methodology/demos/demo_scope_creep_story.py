@@ -22,11 +22,9 @@ def main():
 
     print("\nArgus Ch6 with Guardrail Sandwich + HITL:")
     action = ArgusAction(policy=SafetyPolicy(
-        allowed_tools={"fix_apply"},
-        forbidden_path_prefixes=[],
-        require_human_for={"fix_apply"},
-        max_output_bytes=1_000_000,
-    ), human_approver=lambda action_name, args: (
+        allowed_tools=["fix_apply"],
+        require_human_tools=["fix_apply"],
+    ), human_approver=lambda tool_name, args: (
         "approve" if args.get("file_path") in requested else "decline:not in scope"
     ))
 
