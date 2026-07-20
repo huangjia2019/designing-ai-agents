@@ -6,7 +6,8 @@ try:
 except ImportError:
     Anthropic = object  # type: ignore[misc,assignment]
 
-COT_SYSTEM_PROMPT = """Reason through the question one step at a time
+COT_SYSTEM_PROMPT = """\
+Reason through the question one step at a time
 and show the work, rather than presenting only the conclusion.
 
 Rules:
@@ -27,7 +28,8 @@ Step 2 (0.72): <the step that follows from it>
 ANSWER: <the conclusion the steps lead to>
 """
 
-VERIFY_PROMPT = """Steps already accepted, for context. Take them as
+VERIFY_PROMPT = """\
+Steps already accepted, for context. Take them as
 given and do not re-litigate them (empty if the step under
 review is the first one):
 {prior}
@@ -113,15 +115,16 @@ def verify_chain(
 
 
 # --- parser behind reason_with_cot above ----------------
-# Listing 5.2 prints the call to parse_chain(); this is the
+# Listing 5.2b prints the call to parse_chain(); this is the
 # function it calls. Kept below the listing boundary so the
 # chain above still reads as it does in the book.
+# Listing 5.2c prints _UNRATED and _confidence below.
 
 # An unrated step is unknown, not certain. Scoring it 1.0
 # would hide it from weakest_step, which is precisely the
 # step most worth verifying: the one the model would not
 # put a number on.
-_UNRATED = 0.5
+_UNRATED = 0.5  #G
 
 _STEP_RE = re.compile(
     r"^step\s*\d+\s*"        # "Step 3"
@@ -151,9 +154,9 @@ def _confidence(raw: str | None) -> float:
     if not match:
         return _UNRATED
     value = float(match.group(1))
-    if match.group(2) == "%":
+    if match.group(2) == "%":  #H
         value /= 100.0
-    if not 0.0 <= value <= 1.0:
+    if not 0.0 <= value <= 1.0:  #I
         return _UNRATED
     return value
 
