@@ -92,7 +92,7 @@ def route_and_reason(  #D
 
 
 # --- extractor behind route_and_reason above ------------
-# Listing 5.3 prints the call to extract_response(); this is
+# Listing 5.3b prints the call to extract_response(); this is
 # the function it calls. Kept below the listing boundary so
 # the router above still reads as it does in the book.
 

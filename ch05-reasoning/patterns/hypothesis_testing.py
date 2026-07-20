@@ -132,16 +132,16 @@ class HypothesisTester:
             target = min(active,  #E
                 key=lambda h: abs(
                     h.evidence_ratio - 0.5))
-            experiment = self._design_experiment(
+            test_plan = self._design_experiment(  #G
                 target)
             observation = self.execute(  #F
-                experiment.action)
+                test_plan.action)
             self.observations.append({
-                "action": experiment.action,
+                "action": test_plan.action,
                 "result": observation,
             })
             self._analyze(
-                target, experiment, observation)
+                target, test_plan, observation)
 
         return self._summarize_results()
 

@@ -134,7 +134,7 @@ class ParallelReasoner:
         return self._best_path(root)
 
     # --- engine behind the search above -----------------
-    # Listings 5.4 and 5.4b print the four MCTS phases;
+    # Listings 5.4b and 5.4c print the four MCTS phases;
     # these are the methods they call. Kept below the
     # listing boundary so the search above still reads as
     # it does in the book.
@@ -230,7 +230,7 @@ class ParallelReasoner:
 
 
 # --- parser behind evaluate above -----------------------
-# Listing 5.4 prints the call to parse_score(); this is the
+# Listing 5.4b prints the call to parse_score(); this is the
 # function it calls.
 
 # An unreadable score is no information. Scoring it 0.0
