@@ -66,17 +66,11 @@ class ArgusReflection:
             quality_threshold=0.8,
         )
         result = loop.refine(task="argus_review", tool_fn=tool_check)
-        # Field names follow Listing 7.1 (task_id / critic_iterations /
-        # critic_converged / quality_scores / tool_grounded). Listing 7.19
-        # prints an older ReflectionTrace shape (iterations / converged /
-        # final_score); the two listings disagree and 7.1 is the dataclass
-        # definition, so it wins here. `final_score` is quality_scores[-1].
         self.last_trace = ReflectionTrace(
-            task_id="argus_review",
-            critic_iterations=result["iterations"],
-            critic_converged=result["converged"],
-            quality_scores=[h["score"] for h in loop.history],
-            tool_grounded=tool_check is not None,
+            iterations=result["iterations"],
+            converged=result["converged"],
+            final_score=result["final_score"],
+            issue_history=[h["score"] for h in loop.history],
         )
         return result
 
@@ -85,14 +79,13 @@ class ArgusReflection:
         self.experience.record_trace(ExecutionTrace(
             task=task,
             outcome="success" if succeeded else "failure",
-            error=error or "",
+            error=error,
         ))
 
-    def extract_skill(self, task: str, solution: str, context: str = "") -> Skill | None:
-        """Extract, verify, and store in one step. Needs a live client.
-
-        Beyond Listing 7.19: a convenience wrapper over Listings 7.7/7.8.
-        add_skill self-verifies, so an unverified candidate never lands.
-        """
-        skill = self.skills.extract_skill(task, solution, context)
-        return skill if self.skills.add_skill(skill) else None
+    def extract_skill(self, name: str, description: str, body: str,
+                      verifier: Callable) -> Skill | None:
+        skill = self.skills.extract_skill(name, description, body)
+        if self.skills.verify_skill(skill, verifier):
+            self.skills.add_skill(skill)
+            return skill
+        return None

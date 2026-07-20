@@ -46,17 +46,15 @@ def review_diff(
         sub_synthesis = collaboration.parallel_review(diff)
         collab_meta = {
             "delegated": True,
-            "agents": collaboration.trace.agent_count,
-            "token_multiplier": round(collaboration.trace.token_multiplier, 2),
-            "handoff_fidelity": round(collaboration.trace.handoff_fidelity, 2),
-            "wall_time_ms": collaboration.trace.wall_time_ms,
+            "parallel_calls": collaboration.trace.parallel_calls,
+            "messages": len(collaboration.trace.messages),
         }
 
     # --- ACTION: tool evidence ---
     action_evidence = []
     lint_trace = action.run_lint(repo_root=repo_root)
     if lint_trace.output:
-        action_evidence.append(f"lint: {str(lint_trace.output)[:200]}")
+        action_evidence.append(f"lint: rc={lint_trace.output.get('returncode')}")
 
     sections = []
     if past:

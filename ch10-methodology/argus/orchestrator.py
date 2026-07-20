@@ -10,7 +10,7 @@
 # → collaboration → governance) and runs them in the composition flow
 # described in §10.10:
 #
-#   1. governance gates the review through ArgusGovernance.run_tool()
+#   1. governance authorizes the review
 #   2. perception gathers the relevant files
 #   3. memory retrieves prior lessons for this project
 #   4. collaboration optionally fans out to sub-agents on complex diffs
@@ -18,7 +18,7 @@
 #   6. reasoning produces the verdict, routed by complexity
 #   7. reflection critiques the verdict, drops likely false positives
 #   8. memory persists the new lesson
-#   9. governance closes the trace and reports the dashboard
+#   9. governance closes the audit chain
 #
 # Each step is observable via its own trace dataclass. The orchestrator
 # returns a single OrchestrationResult that gathers them all.
@@ -33,9 +33,9 @@ from .action import ArgusAction
 from .reflection import ArgusReflection
 from .collaboration import ArgusCollaboration
 from .governance import ArgusGovernance
-from .core import _governance_meta
 
-from patterns.progressive_commitment import TrustLevel
+from patterns.permission_gate import Capability
+from patterns.trust_levels import TrustLevel
 
 
 @dataclass
@@ -66,39 +66,26 @@ class ArgusOrchestrator:
         self.action = action or ArgusAction()
         self.reflection = reflection or ArgusReflection()
         self.collaboration = collaboration or ArgusCollaboration()
-        # Ch9's trust ladder (OBSERVE/ASSIST/SUPERVISED/AUTONOMOUS/
-        # DELEGATED) replaced the old four-rung one. The capstone used to
-        # start at ACT_THEN_REVIEW: act without pre-approval, human reviews
-        # the record afterwards. AUTONOMOUS is that same contract on the
-        # new ladder — everything but CRITICAL runs unattended, and the
-        # Observability Harness keeps the record for the review.
         self.governance = governance or ArgusGovernance(
-            initial_trust=TrustLevel.AUTONOMOUS,
+            initial_trust=TrustLevel.ACT_THEN_REVIEW,
         )
 
     def review(self, diff: str, project: str,
                repo_root: str = ".", budget: int = 50_000,
                delegate_complex: bool = True,
                verify_with_tools: bool = True,
-               refine: bool = True,
-               ask_human=None) -> OrchestrationResult:
+               refine: bool = True) -> OrchestrationResult:
         """The capstone review() flow from §10.10."""
 
-        self.governance.start_review(project)
-
         # 1. governance — is this review allowed at all?
-        perceive = self.governance.run_tool(
-            "read_file", {"repo": repo_root},
-            execute_fn=lambda tool, args: {"repo": args["repo"]},
-            ask_human=ask_human,
+        auth = self.governance.authorize(
+            "perceive", Capability.READ_FILES, {"repo": repo_root}
         )
-        if "error" in perceive:
+        if not auth.allowed:
             return OrchestrationResult(
                 review=None, perception_trace=None,
-                blocked_reason=perceive["error"],
-                governance_meta={
-                    "allowed": False, "reason": perceive["error"],
-                },
+                blocked_reason=auth.reason,
+                governance_meta={"allowed": False, "reason": auth.reason},
             )
 
         # 2. perception — gather files
@@ -117,42 +104,26 @@ class ArgusOrchestrator:
             sub_synthesis = self.collaboration.parallel_review(diff)
             collab_meta = {
                 "delegated": True,
-                "agents": self.collaboration.trace.agent_count,
-                "token_multiplier": round(
-                    self.collaboration.trace.token_multiplier, 2
-                ),
-                "handoff_fidelity": round(
-                    self.collaboration.trace.handoff_fidelity, 2
-                ),
-                "wall_time_ms": self.collaboration.trace.wall_time_ms,
+                "parallel_calls": self.collaboration.trace.parallel_calls,
+                "messages": len(self.collaboration.trace.messages),
             }
 
         # 5. action — gather deterministic verifier evidence (gated by governance)
-        # run_tool books the trust outcome itself, so the old separate
-        # report_outcome call is gone: success is 'no error came back'.
         action_evidence: list[str] = []
         if verify_with_tools:
-
-            def _lint(tool: str, args: dict) -> dict:
-                trace = self.action.run_lint(repo_root=args["repo"])
-                if trace.guardrail_blocked:
-                    return {"error": f"guardrail: {trace.guardrail_reason}"}
-                if trace.error:
-                    return {"error": trace.error}
-                return {"trace": trace}
-
-            lint_result = self.governance.run_tool(
-                "run_command", {"cmd": "lint", "repo": repo_root},
-                execute_fn=_lint, ask_human=ask_human,
+            lint_auth = self.governance.authorize(
+                "run_lint", Capability.RUN_LINT, {"repo": repo_root}
             )
-            if "error" in lint_result:
-                action_evidence.append(
-                    f"lint: blocked by governance ({lint_result['error']})"
+            if lint_auth.allowed:
+                lint_trace = self.action.run_lint(repo_root=repo_root)
+                self.governance.report_outcome(
+                    success=not lint_trace.guardrail_blocked and not lint_trace.error,
+                    blocked=lint_trace.guardrail_blocked,
                 )
-            elif lint_result["trace"].output:
-                action_evidence.append(
-                    f"lint: rc={lint_result['trace'].output.get('returncode')}"
-                )
+                if lint_trace.output:
+                    action_evidence.append(
+                        f"lint: rc={lint_trace.output.get('returncode')}"
+                    )
 
         # 6. reasoning — produce the verdict
         sections = []
@@ -188,21 +159,23 @@ class ArgusOrchestrator:
             result.confidence = min(result.confidence, refined["final_score"])
 
         # 8. memory (after) + outcome bookkeeping
-        converged = reflection_meta.get("converged", True)
-        self.governance.trust.record_action(success=converged)
+        self.governance.report_outcome(success=reflection_meta.get("converged", True))
         self.reflection.record_outcome(
             task=f"review:{project}",
-            succeeded=converged,
+            succeeded=reflection_meta.get("converged", True),
         )
         self.memory.after_review(review_summary=result.verdict[:200], project=project)
 
-        # 9. governance — close the trace, report the dashboard (§9.5).
-        # Listing 10.1's '#H Governance: record outcome for observability
-        # and trust tracking' is this call.
-        dashboard = self.governance.finish_review(success=converged)
-        governance_meta = _governance_meta(
-            self.governance, allowed=True, dashboard=dashboard,
-        )
+        # 9. governance — close audit chain
+        chain_ok, chain_len = self.governance.audit.verify_chain()
+        governance_meta = {
+            "allowed": True,
+            "audit_entries": chain_len,
+            "audit_chain_ok": chain_ok,
+            "current_trust": self.governance.current_trust().level.value,
+            "promotions": self.governance.trace.promotions,
+            "demotions": self.governance.trace.demotions,
+        }
 
         return OrchestrationResult(
             review=result,

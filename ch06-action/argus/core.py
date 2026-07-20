@@ -64,8 +64,10 @@ def review_diff(
     if verify_with_tools:
         lint_trace = action.run_lint(repo_root=repo_root)
         if not lint_trace.guardrail_blocked and lint_trace.output:
+            rc = lint_trace.output.get("returncode")
             action_evidence.append(
-                f"lint: {str(lint_trace.output)[:500]}"
+                f"lint (returncode={rc}): "
+                + (lint_trace.output.get("stdout", "")[:500] or "(clean)")
             )
 
     context = _format_context(selected, past, action_evidence)

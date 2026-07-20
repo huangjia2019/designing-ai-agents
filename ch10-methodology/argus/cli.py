@@ -73,7 +73,7 @@ def main(argv=None):
     print(f"\n=== Action log ({len(outcome.action_log)} action(s)) ===")
     for a in outcome.action_log:
         flag = "BLOCKED" if a.guardrail_blocked else ("ERROR" if a.error else "OK")
-        print(f"  [{flag:7}] {a.tool_name} {a.wall_time_ms:.0f}ms")
+        print(f"  [{flag:7}] {a.tool} {a.duration_ms:.0f}ms")
     return 0
 
 

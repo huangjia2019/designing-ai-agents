@@ -5,8 +5,7 @@ What Argus can do at end of Ch8 (additive over Ch7):
       (security / style / complexity perspectives)
   + Synthesize sub-agent findings into a unified review
   + Optional adversarial check on individual claims
-  + CollaborationTrace for audit (token multiplier, handoff fidelity,
-      conflicts, wall time)
+  + CollaborationTrace for audit (handoffs, parallel calls, messages)
 
 Use:
     from argus import review_diff, ArgusCollaboration
