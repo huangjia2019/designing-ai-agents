@@ -38,21 +38,22 @@ Listings are fragments that concatenate in listing order to form each file.
 | 9.3 | `patterns/approval_gate.py` | `classify_risk`, `_matches` |
 | 9.4 | `patterns/approval_gate.py` | `evaluate`, `_log` |
 | 9.5 | `patterns/blast_radius.py` | `SandboxConfig` |
-| 9.6 | `patterns/blast_radius.py` | `SandboxedExecutor`, `validate_path`, `check_rate_limit`, `check_budget` |
+| 9.6 | `patterns/blast_radius.py` | `SandboxedExecutor`, `start_task`, `validate_path`, `check_rate_limit`, `check_budget` |
 | 9.7 | `patterns/blast_radius.py` | `execute` — the layered gauntlet |
 | 9.8 | `patterns/progressive_commitment.py` | `TrustLevel`, `TrustMetrics`, `EscalationThresholds` |
 | 9.9 | `patterns/progressive_commitment.py` | `TrustManager`, `record_action` |
 | 9.10 | `patterns/progressive_commitment.py` | `_check_escalation`, `_escalate`, `_demote` |
 | 9.11 | `patterns/progressive_commitment.py` | `should_ask_human`, `get_status` |
-| 9.12 | `patterns/observability_harness.py` | `Span`, `AgentObserver`, `start_trace`, `start_span` |
+| 9.12 | `patterns/observability_harness.py` | `Span`, `AgentObserver`, `start_trace`, `finish_trace`, `start_span` |
 | 9.13 | `patterns/observability_harness.py` | `record_llm_call` |
-| 9.14 | `patterns/observability_harness.py` | `record_tool_call`, `record_task_outcome` |
+| 9.14 | `patterns/observability_harness.py` | `record_decision`, `record_tool_call`, `record_task_outcome` |
 | 9.15 | `patterns/observability_harness.py` | `get_dashboard`, `export_traces` |
 | 9.16 | `argus/governance.py` | `ArgusGovernance` — constructing the four patterns |
 | 9.17 | `argus/governance.py` | `run_tool`, `finish_review` — the chokepoint |
 
-The four pattern files are the book's code verbatim; the repo adds only
-the imports and module headers the listings elide.
+The four pattern files track the book's public contracts. The repo also keeps
+module documentation and the small `start_task` lifecycle helper that resets
+the per-task cost counter when `ArgusGovernance.start_review()` opens a trace.
 
 ## The order is the design
 
@@ -69,6 +70,11 @@ sandbox.execute()      whatever survives runs inside the tool allowlist,
 observer.record_*()    the call and its outcome become the evidence the
                        next decision is made on
 ```
+
+`start_review()` opens one trace and resets the per-task budget. Every return
+path closes that trace through `finish_review()`, including a denied pre-check;
+starting a second trace while one is active raises instead of silently mixing
+two tasks' token and cost accounting.
 
 ## Trust levels decide what actually prompts
 

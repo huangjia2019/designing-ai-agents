@@ -82,9 +82,13 @@ def review_diff(
         ask_human=ask_human,
     )
     if "error" in perceive:
+        dashboard = governance.finish_review(
+            success=False
+        )
         return None, None, [], {}, {}, _governance_meta(
             governance, allowed=False, reason=perceive["error"],
             audit_size=len(governance.gate.audit_log),
+            dashboard=dashboard,
         )
     selected, p_trace = gather_review_context(diff, repo_root, budget)
     past = memory.before_review(project=project, diff_summary=diff[:300].replace("\n", " "))

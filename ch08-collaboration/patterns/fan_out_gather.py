@@ -117,6 +117,8 @@ class FanOutGather:
             r for r in results
             if r.status == "completed"
         ]
+        if not completed:
+            raise RuntimeError("All fan-out workers failed")
 
         if strategy == "concatenate":
             return "\n\n---\n\n".join(

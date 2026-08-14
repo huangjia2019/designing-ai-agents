@@ -51,6 +51,7 @@ class ArgusGovernance:
         self.sandbox = SandboxedExecutor(
             config
             or SandboxConfig(
+                allowed_paths=["."],
                 allowed_tools=[
                     "read_file", "run_command",
                     "edit_file",
@@ -61,6 +62,7 @@ class ArgusGovernance:
 
     def start_review(self, pr: str):
         self.observer.start_trace(f"review {pr}")
+        self.sandbox.start_task()
 
     def run_tool(
         self, tool_name: str, args: dict,
@@ -73,6 +75,9 @@ class ArgusGovernance:
         )
         decision, reason = self.gate.evaluate(
             action
+        )
+        self.observer.record_decision(
+            tool_name, decision.value, reason
         )
         if decision is Decision.DENY:
             return {"error": reason}
@@ -89,6 +94,9 @@ class ArgusGovernance:
                 self.trust.record_action(
                     success=False,
                     user_override=True,
+                )
+                self.observer.record_decision(
+                    tool_name, "declined", reason
                 )
                 return {"error": "Declined"}
 
@@ -112,4 +120,5 @@ class ArgusGovernance:
         self.observer.record_task_outcome(
             success, human_override
         )
+        self.observer.finish_trace(success=success)
         return self.observer.get_dashboard()

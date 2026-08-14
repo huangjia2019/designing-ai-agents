@@ -105,9 +105,6 @@ class ArgusCollaboration:
             self._client, num_rounds=num_rounds
         )
         result = reviewer.debate(claim)
-        self.trace.conflicts_detected += len(result.rounds)
-        if result.winning_position == "reviewer":
-            self.trace.conflicts_resolved += 1
         return result
 
     # --- default stubs (replace with LLM-backed callables in production) ---

@@ -47,18 +47,30 @@ class AgentObserver:
         self.agent_id = agent_id
         self.traces: list[list[Span]] = []
         self.current_trace: list[Span] = []
+        self.current_root: Span | None = None
+        self.current_task_tokens = 0
         self.metrics: dict = defaultdict(list)
 
     def start_trace(
         self, task_description: str
     ):
         """Begin a new trace for a task."""
+        if self.current_root is not None:
+            raise RuntimeError(
+                "Finish the active trace before starting another"
+            )
+        self.current_task_tokens = 0
         self.current_trace = []
         self.traces.append(self.current_trace)
-        self.start_span(
+        self.current_root = self.start_span(
             "task", "task",
             description=task_description,
         )
+
+    def finish_trace(self, **metadata):
+        if self.current_root is not None:
+            self.current_root.finish(**metadata)
+            self.current_root = None
 
     def start_span(
         self, name: str, span_type: str,
@@ -96,7 +108,7 @@ class AgentObserver:
         )
         self.current_trace.append(span)
 
-        self.metrics["total_tokens"].append(
+        self.current_task_tokens += (
             input_tokens + output_tokens
         )
         self.metrics["total_cost"].append(
@@ -105,6 +117,21 @@ class AgentObserver:
         self.metrics["llm_latency_ms"].append(
             duration_ms
         )
+
+    def record_decision(
+        self, tool_name: str,
+        decision: str, reason: str,
+    ):
+        span = Span(
+            name=f"decision:{tool_name}",
+            span_type="decision",
+            metadata={
+                "decision": decision,
+                "reason": reason,
+            },
+        )
+        span.finish()
+        self.current_trace.append(span)
 
     def record_tool_call(
         self, tool_name: str,
@@ -141,6 +168,10 @@ class AgentObserver:
         self.metrics["human_override"].append(
             1 if human_override else 0
         )
+        self.metrics["tokens_per_task"].append(
+            self.current_task_tokens
+        )
+        self.current_task_tokens = 0
 
     def get_dashboard(self) -> dict:
         """Summary dashboard of key metrics."""
@@ -169,7 +200,7 @@ class AgentObserver:
                 f"${sum(self.metrics['total_cost']):.2f}",
             "avg_tokens_per_task": int(
                 safe_avg(
-                    self.metrics["total_tokens"]
+                    self.metrics["tokens_per_task"]
                 )
             ),
         }

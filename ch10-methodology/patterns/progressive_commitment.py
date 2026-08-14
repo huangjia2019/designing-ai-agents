@@ -18,7 +18,7 @@ class TrustMetrics:
     user_overrides: int = 0
     escalations: int = 0
     errors: int = 0
-    consecutive_successes: int = 0
+    consecutive_errors: int = 0
 
     @property
     def success_rate(self) -> float:
@@ -37,6 +37,12 @@ class TrustMetrics:
             self.user_overrides
             / self.total_actions
         )
+
+    @property
+    def error_rate(self) -> float:
+        if self.total_actions == 0:
+            return 0.0
+        return self.errors / self.total_actions
 
 
 @dataclass
@@ -86,10 +92,10 @@ class TrustManager:
 
         if success:
             self.metrics.successful_actions += 1
-            self.metrics.consecutive_successes += 1
+            self.metrics.consecutive_errors = 0
         else:
             self.metrics.errors += 1
-            self.metrics.consecutive_successes = 0
+            self.metrics.consecutive_errors += 1
 
         if user_override:
             self.metrics.user_overrides += 1
@@ -97,7 +103,7 @@ class TrustManager:
         # Check for demotion
         thresh = self.thresholds
         if (
-            self.metrics.errors
+            self.metrics.consecutive_errors
             >= thresh.consecutive_errors_for_demotion
         ):
             self._demote(
@@ -120,6 +126,8 @@ class TrustManager:
             >= t.min_success_rate
             and m.override_rate
             <= t.max_override_rate
+            and m.error_rate
+            <= t.max_error_rate
         ):
             self._escalate(
                 "Performance thresholds met"
@@ -156,20 +164,17 @@ class TrustManager:
             self.metrics = TrustMetrics()
 
     def should_ask_human(
-        self, risk_level: str
+        self, risk_level: str,
+        sovereignty_trigger: bool = False,
     ) -> bool:
-        """Determine if action needs approval."""
-        if self.level <= TrustLevel.OBSERVE:
+        """Preserve permanent human boundaries at every level."""
+        if sovereignty_trigger or risk_level == "critical":
             return True
-        if self.level == TrustLevel.ASSIST:
+        if self.level <= TrustLevel.ASSIST:
             return True
         if self.level == TrustLevel.SUPERVISED:
-            return risk_level in (
-                "high", "critical"
-            )
-        if self.level == TrustLevel.AUTONOMOUS:
-            return risk_level == "critical"
-        return False  # DELEGATED: audit only
+            return risk_level == "high"
+        return False
 
     def get_status(self) -> dict:
         return {
@@ -181,6 +186,8 @@ class TrustManager:
                     f"{self.metrics.success_rate:.1%}",
                 "override_rate":
                     f"{self.metrics.override_rate:.1%}",
+                "error_rate":
+                    f"{self.metrics.error_rate:.1%}",
             },
             "history_length":
                 len(self.level_history),

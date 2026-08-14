@@ -93,11 +93,15 @@ class ArgusOrchestrator:
             ask_human=ask_human,
         )
         if "error" in perceive:
+            dashboard = self.governance.finish_review(
+                success=False
+            )
             return OrchestrationResult(
                 review=None, perception_trace=None,
                 blocked_reason=perceive["error"],
                 governance_meta={
                     "allowed": False, "reason": perceive["error"],
+                    "dashboard": dashboard,
                 },
             )
 

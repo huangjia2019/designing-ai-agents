@@ -89,6 +89,7 @@ class AdversarialReview:
             f"{opening}\n\n"
         )
         rounds = []
+        current_pro = opening
 
         for rn in range(self.num_rounds):
             rev = self._call_agent(
@@ -103,9 +104,13 @@ class AdversarialReview:
                 f"Reviewer (Round {rn + 1}): "
                 f"{rev}\n\n"
             )
-            pro = ""
+            rounds.append(DebateRound(
+                round_number=rn + 1,
+                proponent_argument=current_pro,
+                reviewer_objection=rev,
+            ))
             if rn < self.num_rounds - 1:
-                pro = self._call_agent(
+                current_pro = self._call_agent(
                     proponent_sys,
                     [{"role": "user", "content": (
                         f"Question: {question}\n"
@@ -115,15 +120,8 @@ class AdversarialReview:
                 )
                 transcript += (
                     f"Proponent (Round {rn+2}): "
-                    f"{pro}\n\n"
+                    f"{current_pro}\n\n"
                 )
-            rounds.append(DebateRound(
-                round_number=rn + 1,
-                proponent_argument=(
-                    opening if rn == 0 else pro
-                ),
-                reviewer_objection=rev,
-            ))
 
         verdict = self._call_agent(
             judge_sys,

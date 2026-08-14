@@ -19,8 +19,10 @@ class Decision(Enum):
 class ToolAction:
     tool_name: str
     arguments: dict
-    risk_level: RiskLevel = RiskLevel.MEDIUM
     reversible: bool = True
+    risk_level: RiskLevel = field(
+        init=False, default=RiskLevel.MEDIUM
+    )
 
 
 @dataclass
@@ -63,7 +65,13 @@ class ApprovalGate:
     def classify_risk(
         self, action: ToolAction
     ) -> RiskLevel:
-        """Classify action risk by tool type."""
+        """Classify action risk by external effect and tool type."""
+        external = {
+            "send_email", "post_api",
+            "deploy", "delete_database",
+        }
+        if action.tool_name in external:
+            return RiskLevel.CRITICAL
         if not action.reversible:
             return RiskLevel.HIGH
 
@@ -87,13 +95,6 @@ class ApprovalGate:
         }
         if action.tool_name in exec_tools:
             return RiskLevel.HIGH
-
-        external = {
-            "send_email", "post_api",
-            "deploy", "delete_database",
-        }
-        if action.tool_name in external:
-            return RiskLevel.CRITICAL
 
         return RiskLevel.MEDIUM
 

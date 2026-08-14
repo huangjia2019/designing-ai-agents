@@ -53,18 +53,33 @@ class SandboxedExecutor:
         self.action_timestamps: list[float] = []
         self.cumulative_cost: float = 0.0
 
+    def start_task(self):
+        """Reset counters whose limit is scoped to one task."""
+        self.cumulative_cost = 0.0
+
+    @staticmethod
+    def _within(candidate: Path, root: Path) -> bool:
+        return candidate == root or candidate.is_relative_to(root)
+
     def validate_path(
         self, path: str
     ) -> bool:
-        """Layer 1: Check allowed/blocked."""
-        resolved = str(Path(path).resolve())
-        for blocked in self.config.blocked_paths:
-            if resolved.startswith(blocked):
-                return False
-        for allowed in self.config.allowed_paths:
-            if resolved.startswith(allowed):
-                return True
-        return False
+        """Layer 1: Check allowed/blocked path boundaries."""
+        candidate = Path(path).resolve()
+        blocked = [
+            Path(value).resolve()
+            for value in self.config.blocked_paths
+        ]
+        if any(self._within(candidate, root) for root in blocked):
+            return False
+        allowed = [
+            Path(value).resolve()
+            for value in self.config.allowed_paths
+        ]
+        return any(
+            self._within(candidate, root)
+            for root in allowed
+        )
 
     def check_rate_limit(self) -> bool:
         """Layer 3: Actions-per-minute limit."""
@@ -105,12 +120,17 @@ class SandboxedExecutor:
                          f"not in allowlist"
             }
 
-        if "path" in args:
-            if not self.validate_path(
-                args["path"]
+        path_keys = (
+            "path", "file_path", "cwd",
+            "repo", "repo_root",
+        )
+        for key in path_keys:
+            if (
+                key in args
+                and not self.validate_path(args[key])
             ):
                 return {
-                    "error": "Path outside sandbox"
+                    "error": f"{key} outside policy boundary"
                 }
 
         # Layer 3: Rate limit

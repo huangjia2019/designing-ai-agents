@@ -5,7 +5,7 @@ execute_safely orchestrator), and Listing 6.12 (risk classification and
 output redaction).
 
   Layer 1  Input filter    — classify risk, allow / block / route to human
-  Layer 2  Sandbox         — run the tool
+  Layer 2  Executor        — run the tool inside the caller's isolation boundary
   Layer 3  Output filter   — redact sensitive patterns from the result
 
 The gate pattern earns its keep when actions are irreversible — payments,
@@ -51,7 +51,7 @@ class SafetyPolicy:
             r"\s*[:=]\s*\S+",
             r"\b[A-Za-z0-9._%+-]+"
             r"@[A-Za-z0-9.-]+"
-            r"\.[A-Z|a-z]{2,}\b",
+            r"\.[A-Za-z]{2,}\b",
             r"\b\d{3}-\d{2}-\d{4}\b",
         ])
     )
@@ -67,7 +67,7 @@ class SafetyPolicy:
 
 
 class GuardrailSandwich:
-    """Input filter, sandbox, output filter."""
+    """Input filter, executor, output filter."""
 
     def __init__(
         self, policy: SafetyPolicy,
@@ -97,7 +97,7 @@ class GuardrailSandwich:
                 **verdict,
             }
 
-        # Layer 2: Execute in sandbox
+        # Layer 2: Execute through the caller-supplied isolation boundary
         try:
             raw = executor(
                 tool_name, arguments
@@ -107,6 +107,8 @@ class GuardrailSandwich:
                 "executed": False,
                 "blocked_by": "execution",
                 "error": str(e),
+                "risk_level": risk.value,
+                "human_decision": verdict.get("human_decision"),
             }
 
         # Layer 3: Output filter
@@ -116,6 +118,7 @@ class GuardrailSandwich:
         return {
             "executed": True,
             "risk_level": risk.value,
+            "human_decision": verdict.get("human_decision"),
             "output": safe,
         }
 
@@ -123,7 +126,7 @@ class GuardrailSandwich:
         self, tool_name: str,
         arguments: dict,
     ) -> RiskLevel:
-        args_str = str(arguments).lower()
+        args_str = f"{tool_name} {arguments}".lower()
         destructive = [
             "rm -rf", "drop table",
             "delete", "truncate",

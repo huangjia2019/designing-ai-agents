@@ -15,7 +15,8 @@ tracks living side by side inside each chapter:
   `from argus import ...` so the reader runs the chapter's Argus directly:
   `python -m argus.cli <diff> --project <name>`.
 - **`patterns/`** — independent pattern demos for everything the chapter
-  introduces. Not every pattern integrates into Argus. Those patterns live here as runnable references.
+  introduces. Patterns that do not belong in the cumulative Argus example
+  remain here as runnable references.
 
 中文版：[README.zh-CN.md](README.zh-CN.md)
 
@@ -103,25 +104,29 @@ demos/        optional cross-framework / story-driven scripts (Ch2, Ch10)
 pip install -r requirements.txt
 ```
 
-`anthropic` is the only hard dependency to run the cli/demos against a
-live model. `patterns/hierarchical_memory.py` expects a `vector_db` argument
-with `.search(query, top_k)` and `.upsert(text, metadata)` methods — the
-demos ship a tiny `_Stub` so they run offline; in production swap with
-`chromadb` / `qdrant` / `faiss`.
+This installs the shared dependencies used across the chapter examples; it
+does not turn the repository into one global Python package. Run code from a
+single chapter directory so its chapter-local `argus` and `patterns` modules
+remain unambiguous. `anthropic` supports the live Argus path, while
+`openai-agents` and `langgraph` support the cross-framework examples.
+
+`patterns/hierarchical_memory.py` expects a `vector_db` argument with
+`.search(query, top_k)` and `.upsert(text, metadata)` methods. The demos ship
+a tiny `_Stub` so they run offline; in production, replace it with the vector
+store used by your system.
 
 ---
 
 ## Design principles in this repo
 
 1. **Cumulative Argus**: each chapter's `argus/core.py` builds on the prior
-   chapter. Reading `ch10/argus/orchestrator.py` you see the §10.10 promise
-   "every method call maps to a working class from Ch3-Ch9" — cashed.
+   chapter. The Chapter 10 orchestrator implements the §10.10 contract: every
+   method call maps to a working class from Chapters 3–9.
 2. **Two tracks per chapter**: `argus/` (composition into Argus) and
    `patterns/` (independent demos). Not every pattern integrates into the
-   coding-agent storyline — that's by design.
+   coding-agent storyline; the independent track keeps those examples runnable.
 3. **Offline-safe**: every demo runs without an API key by falling back
    to deterministic shims; set `ANTHROPIC_API_KEY` to switch to live.
 4. **Observable**: every cognitive module emits a `Trace` dataclass.
    Ch10's `OrchestrationResult` aggregates them — perception trace,
    action log, reflection meta, collaboration meta, governance meta.
-

@@ -1,23 +1,21 @@
-# argus/action.py — Argus action layer, Ch6 snapshot. Book: Listing 6.13.
+# argus/action.py — Argus action layer, Ch6 snapshot. Book: Listings 6.13–6.15.
 #
-# Tracks §6.8 'Argus checkpoint' which promises this module wires five
+# Tracks §6.8 'Argus checkpoint' which wires three
 # capabilities into Argus:
 #   1. Run linter via tool dispatch
-#   2. Run tests via prompt chain
-#   3. Apply fixes via plan-and-execute
-#   4. Safety gates on destructive operations (Guardrail Sandwich)
-#   5. ActionTrace for every action taken
+#   2. Run tests and human-approved one-spot fixes through guarded dispatch
+#   3. Record an ActionTrace for every action taken
 #
-# This module is the facade. It does not re-implement the patterns — they
-# live in patterns/. Argus composes them.
+# Prompt Chaining and Plan-and-Execute remain standalone pattern examples at
+# this checkpoint. This module is the facade over dispatch, policy, and trace.
 #
-# LISTING MAP (reconciled 2026-07-17)
+# LISTING MAP
 # -----------------------------------
 # This file is printed by three listings, in file order:
 #
-#   Listing 6.12b  _run_lint, _run_tests, _apply_fix, default_policy
-#   Listing 6.13   ArgusAction.__init__
-#   Listing 6.13b  call_tool, _trace, run_lint, run_tests, apply_fix
+#   Listing 6.13  _run_lint, _run_tests, _apply_fix, default_policy
+#   Listing 6.14  ArgusAction.__init__
+#   Listing 6.15  call_tool, _trace, run_lint, run_tests, apply_fix
 #
 # Earlier printings of 6.13 called a GuardrailSandwich API that Listing 6.11
 # does not define — GuardrailSandwich(policy, human_approver=...) and
@@ -26,15 +24,8 @@
 # .execute_safely(tool_name, arguments, executor) -> dict. The two could not
 # both be true of one class. The book now prints this file's real API: the
 # sandwich follows Listing 6.11, and _trace adapts its verdict dict into the
-# ActionTrace of Listing 6.1. No divergence remains between 6.12b/6.13/6.13b
+# ActionTrace of Listing 6.1. No divergence remains between Listings 6.13–6.15
 # and the code below.
-#
-# Known gap, inherited from Listing 6.11 and NOT introduced here: on the
-# approved-and-executed path, execute_safely returns only
-# {executed, risk_level, output}, so human_decision does not survive into the
-# trace. An approved action records success but not who approved it. A
-# declined action keeps the field, because 6.11 spreads **verdict on the
-# blocked path. Fixing this means changing 6.11's success return shape.
 import subprocess
 import time
 from pathlib import Path

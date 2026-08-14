@@ -21,7 +21,7 @@ class ReasoningTrace:
         return self.reasoning_steps / (self.thinking_tokens / 1000)
 
     @property
-    def backtrack_rate(self) -> float:  #D
+    def hypothesis_refutation_rate(self) -> float:  #D
         if self.hypotheses_generated == 0:
             return 0
         return self.hypotheses_refuted / self.hypotheses_generated
