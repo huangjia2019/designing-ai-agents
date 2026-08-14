@@ -26,6 +26,7 @@ export OPENAI_API_KEY=sk-...
 python demos/openai_argus.py  # Same agent, OpenAI SDK
 
 export GOOGLE_API_KEY=...
+export GOOGLE_GENAI_USE_VERTEXAI=FALSE
 python demos/adk_argus.py     # Same agent, Google ADK
 ```
 
@@ -38,4 +39,5 @@ python demos/adk_argus.py     # Same agent, Google ADK
   placeholder stubs; swap them for real checks in production.
 - `demos/adk_argus.py` — not a book listing. It exists so the same PRA loop
   can be read in a third framework; ADK keeps the agent declarative and puts
-  the loop in a Runner. Requires `pip install google-adk`.
+  the loop in a Runner. It is live-only and requires `pip install google-adk`,
+  `GOOGLE_API_KEY`, and `GOOGLE_GENAI_USE_VERTEXAI=FALSE`.

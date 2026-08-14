@@ -18,6 +18,7 @@ paragraph: the pattern outlives the primitive that spells it.
 
     pip install google-adk
     export GOOGLE_API_KEY=...
+    export GOOGLE_GENAI_USE_VERTEXAI=FALSE
     python demos/adk_fan_out_gather.py
 """
 import asyncio

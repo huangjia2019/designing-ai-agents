@@ -65,8 +65,10 @@ python3 demos/demo_scope_creep_story.py
 python3 demos/demo_critic_loop_story.py
 ```
 
-For real LLM responses, set `ANTHROPIC_API_KEY` and the demos transparently
-switch from the offline shim to live Sonnet calls.
+For real Argus responses, set `ANTHROPIC_API_KEY`; the core demos then switch
+from their offline shim to live Sonnet calls. The optional Google ADK examples
+are live-only and require `GOOGLE_API_KEY` plus
+`GOOGLE_GENAI_USE_VERTEXAI=FALSE`.
 
 ---
 
@@ -108,7 +110,9 @@ This installs the shared dependencies used across the chapter examples; it
 does not turn the repository into one global Python package. Run code from a
 single chapter directory so its chapter-local `argus` and `patterns` modules
 remain unambiguous. `anthropic` supports the live Argus path, while
-`openai-agents` and `langgraph` support the cross-framework examples.
+`openai-agents`, `langgraph`, and `google-adk` support the cross-framework
+examples. The ADK version is constrained to the tested 2.7 series because its
+older workflow-agent primitives are already deprecated.
 
 `patterns/hierarchical_memory.py` expects a `vector_db` argument with
 `.search(query, top_k)` and `.upsert(text, metadata)` methods. The demos ship
@@ -125,8 +129,9 @@ store used by your system.
 2. **Two tracks per chapter**: `argus/` (composition into Argus) and
    `patterns/` (independent demos). Not every pattern integrates into the
    coding-agent storyline; the independent track keeps those examples runnable.
-3. **Offline-safe**: every demo runs without an API key by falling back
-   to deterministic shims; set `ANTHROPIC_API_KEY` to switch to live.
+3. **Offline-first core**: the pattern modules and capstone stories run without
+   an API key. Cross-framework examples that require a live provider say so in
+   their chapter README.
 4. **Observable**: every cognitive module emits a `Trace` dataclass.
    Ch10's `OrchestrationResult` aggregates them — perception trace,
    action log, reflection meta, collaboration meta, governance meta.

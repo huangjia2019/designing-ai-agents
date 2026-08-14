@@ -7,6 +7,7 @@ arrives as a Content message and the reasoning result comes back as events.
 
     pip install google-adk
     export GOOGLE_API_KEY=...
+    export GOOGLE_GENAI_USE_VERTEXAI=FALSE
     python demos/adk_argus.py
 """
 import asyncio

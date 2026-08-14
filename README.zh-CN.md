@@ -59,9 +59,11 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-根目录的 `requirements.txt` 只安装共享依赖。MCP、向量数据库或 notebook
-等可选示例所需的额外依赖，会在相应章节 README 中说明。没有 API Key 时，
-所有章节仍可做语法和导入检查；需要真实模型响应的示例再配置相应 Key。
+根目录的 `requirements.txt` 安装共享依赖以及第 2、8 章跨框架示例使用的
+OpenAI Agents SDK、LangGraph 和 Google ADK。MCP、向量数据库或 notebook
+等其他可选依赖，会在相应章节 README 中说明。没有 API Key 时，所有章节
+仍可做语法和导入检查；Google ADK 示例是 live-only，运行时需配置
+`GOOGLE_API_KEY` 和 `GOOGLE_GENAI_USE_VERTEXAI=FALSE`。
 
 ## 运行
 
