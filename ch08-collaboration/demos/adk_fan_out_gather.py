@@ -10,6 +10,12 @@ The comparison worth making: the hand-built version owns the concurrency and
 the failure handling, the framework version inherits both. Which you want
 depends on how much of the failure behaviour you need to specify yourself.
 
+A second comparison arrives for free. As of google-adk 2.7, ParallelAgent and
+SequentialAgent are deprecated in favour of a graph-based Workflow API, so this
+file emits deprecation warnings and will eventually need rewriting. The
+topology it expresses will not change. That is the chapter's argument in one
+paragraph: the pattern outlives the primitive that spells it.
+
     pip install google-adk
     export GOOGLE_API_KEY=...
     python demos/adk_fan_out_gather.py
