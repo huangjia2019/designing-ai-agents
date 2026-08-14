@@ -93,7 +93,7 @@ Inside every `chNN-*/`:
 ```
 argus/        cumulative Argus snapshot for this chapter
 patterns/     independent pattern demos (the rest of the chapter's listings)
-demos/        optional cross-framework / story-driven scripts (Ch2, Ch10)
+demos/        optional cross-framework / story-driven scripts (Ch2, Ch8, Ch10)
 ```
 
 ---

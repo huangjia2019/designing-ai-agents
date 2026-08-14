@@ -1,3 +1,4 @@
 anthropic>=0.40.0
 openai-agents>=0.0.23
 langgraph>=0.2.0
+google-adk>=1.0.0  # optional: demos/adk_*.py only
