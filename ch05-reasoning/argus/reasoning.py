@@ -1,249 +1,510 @@
-# argus/reasoning.py — Argus reasoning module, Ch5 snapshot.
-#
-# Replaces the Ch5 listing fragments (free-floating defs) with a proper
-# ArgusReasoning class that integrates the three reasoning patterns from
-# this chapter:
-#   * complexity_routing — pick model + token budget by task complexity
-#   * chain_of_thought    — generate a CoT with confidence-tagged steps
-#   * verify_chain        — re-check the weakest step
-#
-# The class is constructed once per Argus instance and decides, for each
-# review request, whether to do a quick single-pass or a multi-step
-# reasoning trace.
+"""Argus Chapter 5 reasoning layer.
+
+Difficulty selects a reasoning path. Consequence is evaluated first and may
+route a deceptively simple change to human review. The returned result carries
+an observable reasoning trace; it does not claim access to private model
+reasoning.
+"""
+
+from __future__ import annotations
+
 import os
 import re
 import shlex
 import subprocess
+import time
+import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from patterns.complexity_routing import classify_complexity, Complexity, ROUTING_TABLE
 from patterns.chain_of_thought import (
     ChainOfThought,
     reason_with_cot,
     verify_chain,
 )
+from patterns.complexity_routing import (
+    ROUTING_TABLE,
+    Complexity,
+    classify_complexity,
+)
 from patterns.hypothesis_testing import HypothesisTester
+from patterns.reasoning_trace import ReasoningTrace
+from patterns.response_text import first_text
 
 
-REVISE_STEP_PROMPT = """A verifier flagged one step of a reasoning chain as invalid.
-Rewrite ONLY that step. Leave every other step alone — they are not yours to touch.
+REVISE_STEP_PROMPT = """A verifier flagged one represented step as invalid.
+Rewrite only that step. Leave every other step unchanged.
 
-Steps already accepted (context; do not restate or amend them):
+Steps already accepted:
 {prior}
 
-Flawed step {step_number} (self-assessed confidence {confidence:.2f}):
+Flawed step {step_number} (confidence {confidence:.2f}):
 {content}
 
-The verifier's objection:
+Verifier objection:
 {issue}
 
 Reply in exactly this format:
-REVISED: <the corrected step, one paragraph>
-CONFIDENCE: <0.0-1.0, your honest confidence in the corrected step>
+REVISED: <the corrected step>
+CONFIDENCE: <0.0-1.0>
 """
 
-REDERIVE_ANSWER_PROMPT = """A reasoning chain was repaired after verification. Re-state
-the conclusion so that it follows from the steps as they now stand.
+REDERIVE_ANSWER_PROMPT = """A represented reasoning chain was repaired.
+Restate the conclusion so it follows from the steps as they now stand.
 
 {steps}
 
-The previous conclusion, drawn before the repair and possibly stale:
+Previous conclusion:
 {old_answer}
 
 Reply with the conclusion only.
 """
 
-# Command heads a hypothesis test may run. See run_in_sandbox().
 _ALLOWED_COMMANDS = frozenset({
-    "cat", "find", "git", "grep", "head", "ls", "pytest",
-    "python", "python3", "rg", "tail", "wc",
+    "cat",
+    "find",
+    "git",
+    "grep",
+    "head",
+    "ls",
+    "pytest",
+    "python",
+    "python3",
+    "rg",
+    "tail",
+    "wc",
 })
 _ALLOWED_GIT_SUBCOMMANDS = frozenset({
-    "blame", "diff", "grep", "log", "show", "status",
+    "blame",
+    "diff",
+    "grep",
+    "log",
+    "show",
+    "status",
 })
+_FORBIDDEN_FIND_OPTIONS = frozenset({
+    "-delete",
+    "-exec",
+    "-execdir",
+    "-fprint",
+    "-fprintf",
+    "-fls",
+    "-ok",
+    "-okdir",
+})
+_SHELL_OPERATORS = frozenset({";", "|", "||", "&&", ">", ">>", "<"})
 _MAX_OUTPUT_CHARS = 4000
 
 
-def run_in_sandbox(cmd: str, repo_path: str, timeout: int = 30) -> str:
-    """Run one hypothesis-test command against a checkout and return what it printed.
+@dataclass(frozen=True)
+class DiffMetadata:
+    files: tuple[str, ...]
+    added_files: tuple[str, ...]
+    deleted_files: tuple[str, ...]
+    renamed_files: tuple[tuple[str, str], ...]
+    hunks: int
 
-    What this contains: an allowlist of command heads, so a hypothesis test cannot
-    reach for `rm` or `curl`; no shell, so `;` and `|` and `$(...)` arrive as inert
-    argument text rather than operators; a working directory pinned to repo_path; a
-    wall-clock timeout; and truncated output, so one chatty test cannot eat the
-    context budget.
 
-    What this does NOT contain: filesystem, network, or process isolation. `pytest`
-    and `python` are on the allowlist because verifying a bug means running the
-    suite, and either one can execute arbitrary code inside repo_path. This is a
-    guard rail, not a jail, and the name is aspirational. Chapter 9 replaces it with
-    SandboxedExecutor, which is the actual Blast Radius Control boundary. What Ch5
-    needs from it is narrower: execute_fn is where reasoning touches the world, so
-    execute_fn is the trust boundary — the point survives the crude implementation.
+def _normalize_diff_path(raw: str) -> str:
+    value = raw.split("\t", 1)[0].strip().strip('"')
+    if value in {"/dev/null", "dev/null"}:
+        return "/dev/null"
+    if value.startswith(("a/", "b/")):
+        return value[2:]
+    return value
 
-    Returns text on every path and raises nothing: HypothesisTester._analyze reads
-    this return value as evidence, and a refusal is evidence too.
+
+def diff_metadata(diff: str) -> DiffMetadata:
+    """Extract path changes without losing ``/dev/null`` semantics."""
+    files: set[str] = set()
+    added: set[str] = set()
+    deleted: set[str] = set()
+    renamed: set[tuple[str, str]] = set()
+    lines = diff.splitlines()
+    old_path: str | None = None
+    rename_from: str | None = None
+
+    for line in lines:
+        if line.startswith("diff --git "):
+            parts = shlex.split(line)
+            if len(parts) >= 4:
+                for item in parts[2:4]:
+                    path = _normalize_diff_path(item)
+                    if path != "/dev/null":
+                        files.add(path)
+        elif line.startswith("--- "):
+            old_path = _normalize_diff_path(line[4:])
+        elif line.startswith("+++ ") and old_path is not None:
+            new_path = _normalize_diff_path(line[4:])
+            if old_path == "/dev/null" and new_path != "/dev/null":
+                added.add(new_path)
+                files.add(new_path)
+            elif new_path == "/dev/null" and old_path != "/dev/null":
+                deleted.add(old_path)
+                files.add(old_path)
+            else:
+                if old_path != "/dev/null":
+                    files.add(old_path)
+                if new_path != "/dev/null":
+                    files.add(new_path)
+            old_path = None
+        elif line.startswith("rename from "):
+            rename_from = _normalize_diff_path(line[len("rename from "):])
+        elif line.startswith("rename to ") and rename_from is not None:
+            rename_to = _normalize_diff_path(line[len("rename to "):])
+            renamed.add((rename_from, rename_to))
+            files.update((rename_from, rename_to))
+            rename_from = None
+
+    return DiffMetadata(
+        files=tuple(sorted(files)),
+        added_files=tuple(sorted(added)),
+        deleted_files=tuple(sorted(deleted)),
+        renamed_files=tuple(sorted(renamed)),
+        hunks=sum(line.startswith("@@") for line in lines),
+    )
+
+
+def routing_view(diff: str) -> str:
+    """Build a bounded input for consequence policy and difficulty routing."""
+    metadata = diff_metadata(diff)
+    return (
+        f"Files: {list(metadata.files)}\n"
+        f"Added files: {list(metadata.added_files)}\n"
+        f"Deleted files: {list(metadata.deleted_files)}\n"
+        f"Renamed files: {list(metadata.renamed_files)}\n"
+        f"Hunks: {metadata.hunks}\n"
+        f"Diff excerpt:\n{diff[:4000]}"
+    )
+
+
+class DefaultReviewPolicy:
+    """Small teaching policy for consequence-first routing."""
+
+    high_impact_markers = (
+        "async",
+        "auth",
+        "billing",
+        "credential",
+        "generated",
+        "lock",
+        "migration",
+        "openapi",
+        "payment",
+        "permission",
+        "production",
+        "security",
+        "thread",
+        "token",
+    )
+
+    def requires_governed_review(self, view: str) -> bool:
+        metadata_prefix = view.split("Diff excerpt:", 1)[0]
+        deleted_line = next(
+            (
+                line
+                for line in metadata_prefix.splitlines()
+                if line.startswith("Deleted files:")
+            ),
+            "Deleted files: []",
+        )
+        if deleted_line != "Deleted files: []":
+            return True
+        lowered = view.lower()
+        return any(marker in lowered for marker in self.high_impact_markers)
+
+
+@dataclass
+class ReviewResult:
+    verdict: str
+    reasoning_steps: list = field(default_factory=list)
+    complexity: str = "simple"
+    confidence: float = 1.0
+    trace: ReasoningTrace | None = None
+    governed: bool = False
+    routing_view: str = ""
+
+
+def _usage_output_tokens(response) -> int:
+    usage = getattr(response, "usage", None)
+    value = getattr(usage, "output_tokens", 0)
+    return value if isinstance(value, int) else 0
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(0, round((time.perf_counter() - started) * 1000))
+
+
+def _new_query_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def _path_is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def run_in_sandbox(
+    cmd: str,
+    repo_path: str,
+    timeout: int = 30,
+) -> str:
+    """Run one bounded, read-oriented check without invoking a shell.
+
+    This is a teaching guardrail, not process or network isolation. Running a
+    repository's tests still executes repository code. Chapter 9 supplies the
+    stronger containment boundary.
     """
+    try:
+        root = Path(repo_path).resolve(strict=True)
+    except OSError as exc:
+        return f"[refused] invalid repository path: {exc}"
+    if not root.is_dir():
+        return "[refused] repository path is not a directory"
+
     try:
         argv = shlex.split(cmd)
     except ValueError as exc:
         return f"[refused] unparseable command: {exc}"
     if not argv:
         return "[refused] empty command"
+    if any(
+        token in _SHELL_OPERATORS or "$(" in token or "`" in token
+        for token in argv
+    ):
+        return "[refused] shell operators are not permitted"
 
     head = os.path.basename(argv[0])
     if head not in _ALLOWED_COMMANDS:
-        return (f"[refused] {head!r} is not on the hypothesis-test allowlist; "
-                f"allowed: {', '.join(sorted(_ALLOWED_COMMANDS))}")
+        return f"[refused] {head!r} is not on the allowlist"
     if head == "git":
-        sub = argv[1] if len(argv) > 1 else ""
-        if sub not in _ALLOWED_GIT_SUBCOMMANDS:
-            return (f"[refused] git {sub!r} may write; allowed subcommands: "
-                    f"{', '.join(sorted(_ALLOWED_GIT_SUBCOMMANDS))}")
+        subcommand = argv[1] if len(argv) > 1 else ""
+        if subcommand not in _ALLOWED_GIT_SUBCOMMANDS:
+            return f"[refused] git {subcommand!r} may write"
+    if head == "find" and any(
+        token in _FORBIDDEN_FIND_OPTIONS for token in argv[1:]
+    ):
+        return "[refused] this find option may write or execute"
+    if head in {"python", "python3"} and argv[1:3] != ["-m", "pytest"]:
+        return "[refused] Python is limited to 'python -m pytest'"
+
+    for token in argv[1:]:
+        if token.startswith("-"):
+            continue
+        if "/" not in token and not token.startswith("."):
+            continue
+        candidate = Path(token)
+        if ".." in candidate.parts:
+            return "[refused] path traversal is not permitted"
+        if candidate.is_absolute() and not _path_is_within(
+            candidate.resolve(), root
+        ):
+            return "[refused] absolute path leaves the repository"
 
     try:
-        proc = subprocess.run(
+        completed = subprocess.run(
             argv,
-            cwd=repo_path,
+            cwd=root,
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=max(1, timeout),
             shell=False,
+            env={
+                "PATH": os.environ.get("PATH", ""),
+                "PYTHONNOUSERSITE": "1",
+            },
         )
     except subprocess.TimeoutExpired:
-        return f"[timeout] no result after {timeout}s"
+        return f"[timeout] no result after {max(1, timeout)}s"
     except OSError as exc:
         return f"[error] {exc}"
 
-    output = (proc.stdout + proc.stderr).strip()
+    output = (completed.stdout + completed.stderr).strip()
     if len(output) > _MAX_OUTPUT_CHARS:
-        output = output[:_MAX_OUTPUT_CHARS] + "\n[...truncated]"
+        output = f"{output[:_MAX_OUTPUT_CHARS]}\n[...truncated]"
     if not output:
-        return f"[exit {proc.returncode}] (no output)"
-    return f"[exit {proc.returncode}]\n{output}"
+        return f"[exit {completed.returncode}] (no output)"
+    return f"[exit {completed.returncode}]\n{output}"
 
 
 def _parse_revision(text: str) -> tuple[str | None, float | None]:
-    """Pull REVISED:/CONFIDENCE: out of a reviser's reply.
-
-    Returns (None, None) when the reply carries no REVISED: block. The caller then
-    keeps the original step: an unparseable reply is a failed repair, and a failed
-    repair should look like one rather than overwrite a step with prose.
-    """
-    match = re.search(r"REVISED:\s*(.+?)(?=\nCONFIDENCE:|\Z)", text, re.S)
+    match = re.search(
+        r"REVISED:\s*(.+?)(?=\nCONFIDENCE:|\Z)",
+        text,
+        re.DOTALL,
+    )
     if not match:
         return None, None
-    content = match.group(1).strip()
+    content = match.group(1).strip() or None
     confidence = None
-    conf_match = re.search(r"CONFIDENCE:\s*([0-9]*\.?[0-9]+)", text)
-    if conf_match:
-        confidence = max(0.0, min(1.0, float(conf_match.group(1))))
-    return (content or None), confidence
-
-
-@dataclass
-class ReviewResult:
-    """The output of a reasoned review — carries the chain, not just the verdict."""
-    verdict: str
-    reasoning_steps: list = field(default_factory=list)
-    confidence: float = 1.0
-    complexity: str = "simple"
+    confidence_match = re.search(
+        r"CONFIDENCE:\s*([+-]?[0-9]*\.?[0-9]+)",
+        text,
+    )
+    if confidence_match:
+        value = float(confidence_match.group(1))
+        if 0.0 <= value <= 1.0:
+            confidence = value
+    return content, confidence
 
 
 class ArgusReasoning:
-    """Argus's reasoning layer: complexity-routed + CoT + verify."""
-
-    def __init__(self, client=None):
-        # client is lazy so the class is importable without anthropic installed.
+    def __init__(self, client=None, review_policy=None):
         self._client = client
+        self.review_policy = review_policy or DefaultReviewPolicy()
+        self._last_backtracks = 0
 
     @property
     def client(self):
         if self._client is None:
             import anthropic
+
             self._client = anthropic.Anthropic()
         return self._client
 
     def review(self, diff: str) -> ReviewResult:
-        """Route the review by complexity, then reason at the right depth."""
+        started = time.perf_counter()
+        view = routing_view(diff)
+        if self.review_policy.requires_governed_review(view):
+            return self.request_human_review(diff, view, started)
+
         complexity = classify_complexity(
             self.client,
-            f"Code review task:\n{diff[:500]}",
+            f"Code review task:\n{view}",
         )
         if complexity == Complexity.SIMPLE:
-            return self.quick_review(diff)
+            return self.quick_review(diff, view, started)
         if complexity == Complexity.MODERATE:
-            return self.review_with_reasoning(diff, complexity)
-        return self.deep_review(diff)
+            return self.review_with_reasoning(
+                diff,
+                complexity,
+                view,
+                started,
+            )
+        return self.deep_review(diff, view, started)
 
-    def quick_review(self, diff: str) -> ReviewResult:
-        """One pass, cheap model, structured output. Used when classifier says SIMPLE."""
-        cfg = ROUTING_TABLE[Complexity.SIMPLE]
-        response = self.client.messages.create(
-            model=cfg["model"],
-            max_tokens=cfg["max_tokens"],
-            messages=[{
-                "role": "user",
-                "content": f"Quick code review:\n{diff}\n\nList up to 3 issues, severity-tagged.",
-            }],
+    def request_human_review(
+        self,
+        diff: str,
+        view: str = "",
+        started: float | None = None,
+    ) -> ReviewResult:
+        started = started if started is not None else time.perf_counter()
+        trace = ReasoningTrace(
+            query_id=_new_query_id(),
+            classified_complexity="governed",
+            model_used="human-review-gate",
+            wall_time_ms=_elapsed_ms(started),
         )
         return ReviewResult(
-            verdict=response.content[0].text,
-            reasoning_steps=[],
-            confidence=0.8,
-            complexity="simple",
+            verdict="Human review required before model-depth routing.",
+            complexity="governed",
+            confidence=0.0,
+            trace=trace,
+            governed=True,
+            routing_view=view or routing_view(diff),
         )
 
-    def review_with_reasoning(self, diff: str, complexity: Complexity) -> ReviewResult:
-        """CoT review with weak-step verification."""
+    def quick_review(
+        self,
+        diff: str,
+        view: str = "",
+        started: float | None = None,
+    ) -> ReviewResult:
+        started = started if started is not None else time.perf_counter()
+        config = ROUTING_TABLE[Complexity.SIMPLE]
+        response = self.client.messages.create(
+            model=config["model"],
+            max_tokens=config["max_tokens"],
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Quick code review:\n{diff}\n\n"
+                    "List up to three severity-tagged issues."
+                ),
+            }],
+        )
+        confidence = 0.8
+        trace = ReasoningTrace(
+            query_id=_new_query_id(),
+            classified_complexity=Complexity.SIMPLE.value,
+            model_used=config["model"],
+            output_tokens=_usage_output_tokens(response),
+            final_confidence=confidence,
+            wall_time_ms=_elapsed_ms(started),
+        )
+        return ReviewResult(
+            verdict=first_text(response),
+            complexity=Complexity.SIMPLE.value,
+            confidence=confidence,
+            trace=trace,
+            routing_view=view,
+        )
+
+    def review_with_reasoning(
+        self,
+        diff: str,
+        complexity: Complexity,
+        view: str = "",
+        started: float | None = None,
+    ) -> ReviewResult:
+        started = started if started is not None else time.perf_counter()
         chain = reason_with_cot(
             self.client,
-            f"Review this code diff for bugs, security issues, and style problems:\n{diff}",
+            "Review this code diff for bugs, security issues, "
+            f"and style problems:\n{diff}",
         )
-        if chain.weakest_step:
-            issues = verify_chain(self.client, chain)
+        self._last_backtracks = 0
+        weakest = chain.weakest_step
+        if weakest is not None:
+            issues = verify_chain(self.client, chain, [weakest])
             if issues:
                 chain = self.revise_chain(chain, issues)
         confidence = (
-            min(s.confidence for s in chain.steps)
-            if chain.steps else 0.5
+            min(step.confidence for step in chain.steps)
+            if chain.steps
+            else 0.5
+        )
+        model = ROUTING_TABLE[complexity]["model"]
+        trace = ReasoningTrace(
+            query_id=_new_query_id(),
+            classified_complexity=complexity.value,
+            model_used=model,
+            reasoning_steps=len(chain.steps),
+            backtracks=self._last_backtracks,
+            final_confidence=confidence,
+            wall_time_ms=_elapsed_ms(started),
         )
         return ReviewResult(
             verdict=chain.final_answer,
             reasoning_steps=chain.steps,
-            confidence=confidence,
             complexity=complexity.value,
+            confidence=confidence,
+            trace=trace,
+            routing_view=view,
         )
 
-    def revise_chain(self, chain: ChainOfThought, issues: list[dict]) -> ChainOfThought:
-        """Repair only the steps the verifier flagged, then re-derive the conclusion.
-
-        `issues` is what verify_chain() returns: [{"step": <step_number>, "issue":
-        <verifier's text>}, ...]. Any step whose number is absent from that list is
-        left byte-identical. That is the entire point of the pattern: a flagged step
-        is cheap to repair, a chain is expensive to regenerate, and regenerating one
-        would throw away the steps that survived verification along with the audit
-        trail attached to them. Steps are repaired lowest-numbered first, so a step
-        being rewritten sees its predecessors in their final, repaired form.
-
-        Mutates and returns the same chain object, matching the caller's
-        `chain = self.revise_chain(chain, issues)`.
-        """
+    def revise_chain(
+        self,
+        chain: ChainOfThought,
+        issues: list[dict],
+    ) -> ChainOfThought:
         flagged: dict[int, list[str]] = {}
         for issue in issues:
             flagged.setdefault(issue["step"], []).append(issue["issue"])
-        if not flagged:
-            return chain
-
-        by_number = {s.step_number: s for s in chain.steps}
-        revised: list[int] = []
+        by_number = {step.step_number: step for step in chain.steps}
+        revised = 0
         for number in sorted(flagged):
             step = by_number.get(number)
             if step is None:
-                continue  # verifier cited a step that is not in this chain
+                continue
             prior = "\n".join(
-                f"Step {s.step_number}: {s.content}"
-                for s in chain.steps if s.step_number < number
+                f"Step {item.step_number}: {item.content}"
+                for item in chain.steps
+                if item.step_number < number
             )
             response = self.client.messages.create(
                 model=ROUTING_TABLE[Complexity.MODERATE]["model"],
@@ -251,7 +512,7 @@ class ArgusReasoning:
                 messages=[{
                     "role": "user",
                     "content": REVISE_STEP_PROMPT.format(
-                        prior=prior or "(none — this is the first step)",
+                        prior=prior or "(none)",
                         step_number=number,
                         confidence=step.confidence,
                         content=step.content,
@@ -259,28 +520,23 @@ class ArgusReasoning:
                     ),
                 }],
             )
-            content, confidence = _parse_revision(response.content[0].text)
+            content, confidence = _parse_revision(first_text(response))
             if content is None:
-                continue  # unparseable reply: keep the step, do not fake a repair
+                continue
             step.content = content
             if confidence is not None:
                 step.confidence = confidence
-            revised.append(number)
-
+            revised += 1
         if revised:
             chain.final_answer = self._rederive_answer(chain)
+        self._last_backtracks += revised
         return chain
 
     def _rederive_answer(self, chain: ChainOfThought) -> str:
-        """Re-state the conclusion after a repair.
-
-        A conclusion drawn from the broken version of a step does not survive that
-        step being fixed, so it is re-stated from the repaired chain. This is one
-        extra call, not a regeneration: the steps are inputs here, not outputs.
-        """
         steps = "\n".join(
-            f"Step {s.step_number} (confidence {s.confidence:.2f}): {s.content}"
-            for s in chain.steps
+            f"Step {step.step_number} "
+            f"(confidence {step.confidence:.2f}): {step.content}"
+            for step in chain.steps
         )
         response = self.client.messages.create(
             model=ROUTING_TABLE[Complexity.MODERATE]["model"],
@@ -293,42 +549,55 @@ class ArgusReasoning:
                 ),
             }],
         )
-        return response.content[0].text.strip()
+        return first_text(response).strip()
 
-    def verify_bug(self, suspicion: str, repo_path: str):
-        """Investigate a suspected bug by running experiments against a real checkout.
+    def deep_review(
+        self,
+        diff: str,
+        view: str = "",
+        started: float | None = None,
+    ) -> ReviewResult:
+        started = started if started is not None else time.perf_counter()
+        config = ROUTING_TABLE[Complexity.COMPLEX]
+        kwargs = {
+            "model": config["model"],
+            "max_tokens": config["max_tokens"],
+            "messages": [{
+                "role": "user",
+                "content": f"Deep code review with explicit evidence:\n{diff}",
+            }],
+        }
+        if config["thinking"]:
+            kwargs["thinking"] = config["thinking"]
+        if config["effort"]:
+            kwargs["output_config"] = {"effort": config["effort"]}
+        response = self.client.messages.create(**kwargs)
+        confidence = 0.5
+        trace = ReasoningTrace(
+            query_id=_new_query_id(),
+            classified_complexity=Complexity.COMPLEX.value,
+            model_used=config["model"],
+            output_tokens=_usage_output_tokens(response),
+            final_confidence=confidence,
+            wall_time_ms=_elapsed_ms(started),
+        )
+        return ReviewResult(
+            verdict=first_text(response),
+            complexity=Complexity.COMPLEX.value,
+            confidence=confidence,
+            trace=trace,
+            routing_view=view,
+        )
 
-        Returns the evidence trail, not a yes/no: a verdict a reviewer cannot audit
-        is worth about as much as the suspicion it started from.
-        """
+    def verify_bug(self, suspicion: str, repo_path: str) -> dict:
         tester = HypothesisTester(
             client=self.client,
-            execute_fn=lambda cmd: run_in_sandbox(cmd, repo_path),
+            execute_fn=lambda command: run_in_sandbox(
+                command,
+                repo_path,
+            ),
             max_iterations=5,
         )
         return tester.investigate(
             f"Verify whether this is a real bug: {suspicion}"
-        )
-
-    def deep_review(self, diff: str) -> ReviewResult:
-        """COMPLEX path: use the highest reasoning tier from ROUTING_TABLE."""
-        cfg = ROUTING_TABLE[Complexity.COMPLEX]
-        kwargs = {
-            "model": cfg["model"],
-            "max_tokens": cfg["max_tokens"],
-            "messages": [{
-                "role": "user",
-                "content": (
-                    f"Deep code review. Walk through reasoning step by step.\n\n{diff}"
-                ),
-            }],
-        }
-        if cfg.get("thinking"):
-            kwargs["thinking"] = cfg["thinking"]
-        response = self.client.messages.create(**kwargs)
-        return ReviewResult(
-            verdict=response.content[0].text,
-            reasoning_steps=[],
-            confidence=0.9,
-            complexity="complex",
         )

@@ -1,12 +1,21 @@
+"""Bounded parallel exploration with a small UCT search."""
+
+from __future__ import annotations
+
 import math
 import random
 import re
 from dataclasses import dataclass, field
-# anthropic is lazy-imported inside functions that need a live client
+
 try:
     from anthropic import Anthropic
 except ImportError:
     Anthropic = object  # type: ignore[misc,assignment]
+
+from patterns.response_text import first_text
+
+
+MODEL = "claude-sonnet-4-6"
 
 EXPAND_PROMPT = """The reasoning so far:
 {path}
@@ -28,33 +37,33 @@ EVAL_PROMPT = """A partial line of reasoning:
 
 Score how promising this path looks, from 0.00 (a dead end,
 or already wrong) to 1.00 (all but solved). The path is
-unfinished by design — judge the direction it is heading,
-not whether it has arrived. Reserve scores above 0.90 for
-paths whose remaining steps you could name.
+unfinished by design. Judge its direction, not whether it
+has arrived.
 
 Reply in exactly this format:
 SCORE: <a number between 0.00 and 1.00>
 WHY: <one sentence>
 """
 
-class ReasoningPath(list):
-    """A root-to-node chain: counts like a list, reads
-    like a prompt.
+_UNSCORED = 0.5
+_SCORE_RE = re.compile(
+    r"SCORE:\s*([+-]?[0-9]*\.?[0-9]+)\s*(%?)",
+    re.IGNORECASE,
+)
 
-    expand() and evaluate() drop this straight into a
-    prompt with {path}, while search() measures depth with
-    len(path). A plain list would satisfy the second and
-    render as a bracketed repr in the first. Holding the
-    rendering here lets both call sites stay as they are.
-    """
+
+class ReasoningPath(list):
+    """A root-to-node path that also renders cleanly in prompts."""
 
     def __str__(self) -> str:
         if not self:
             return "(nothing yet)"
         problem, *thoughts = self
         lines = [f"Problem: {problem}"]
-        lines += [f"Step {i}: {t}"
-                  for i, t in enumerate(thoughts, 1)]
+        lines.extend(
+            f"Step {index}: {thought}"
+            for index, thought in enumerate(thoughts, 1)
+        )
         return "\n".join(lines)
 
 
@@ -63,120 +72,82 @@ class ThoughtNode:
     id: str
     content: str
     parent_id: str | None = None
-    children_ids: list[str] = field(
-        default_factory=list)
-    score: float = 0.0  #A
+    children_ids: list[str] = field(default_factory=list)
+    score: float = 0.0
     visits: int = 0
     total_value: float = 0.0
+
 
 class ParallelReasoner:
     def __init__(self, client: Anthropic):
         self.client = client
         self.nodes: dict[str, ThoughtNode] = {}
 
-    def expand(self, node: ThoughtNode,  #B
-               n_branches: int = 3):
-        path = self._path_to_node(node)
+    def expand(
+        self,
+        node: ThoughtNode,
+        n_branches: int = 3,
+    ) -> list[ThoughtNode]:
+        limit = max(0, n_branches)
+        if limit == 0:
+            return []
         response = self.client.messages.create(
-            model="claude-sonnet-4-6",
+            model=MODEL,
             max_tokens=2048,
-            messages=[{"role": "user",
+            messages=[{
+                "role": "user",
                 "content": EXPAND_PROMPT.format(
-                    path=path, n=n_branches)}],
+                    path=self._path_to_node(node),
+                    n=limit,
+                ),
+            }],
         )
-        return self._parse_thoughts(
-            response, node)
+        return self._parse_thoughts(response, node, limit)
 
-    def evaluate(self, node):  #C
-        path = self._path_to_node(node)
+    @staticmethod
+    def _parse_score(response) -> float:
+        try:
+            text = first_text(response)
+        except ValueError:
+            return _UNSCORED
+        match = _SCORE_RE.search(text)
+        if not match:
+            return _UNSCORED
+        value = float(match.group(1))
+        if match.group(2) == "%":
+            value /= 100.0
+        if not 0.0 <= value <= 1.0:
+            return _UNSCORED
+        return value
+
+    def evaluate(self, node: ThoughtNode) -> float:
         response = self.client.messages.create(
-            model="claude-sonnet-4-6",
+            model=MODEL,
             max_tokens=256,
-            messages=[{"role": "user",
+            messages=[{
+                "role": "user",
                 "content": EVAL_PROMPT.format(
-                    path=path)}],
+                    path=self._path_to_node(node)
+                ),
+            }],
         )
-        node.score = parse_score(response)
+        node.score = self._parse_score(response)
         return node.score
 
-    def uct_select(self, node,  #D
-                   c: float = 1.41):
-        best = None
-        best_uct = -float("inf")
-        for cid in node.children_ids:
-            child = self.nodes[cid]
-            if child.visits == 0:
-                return child
-            exploit = (child.total_value
-                       / child.visits)
-            explore = c * math.sqrt(
-                math.log(node.visits)
-                / child.visits)
-            if exploit + explore > best_uct:
-                best_uct = exploit + explore
-                best = child
-        return best
-
-    def search(self, problem: str,  #E
-               max_depth=4, n_iter=10):
-        root = self._create_root(problem)
-        for _ in range(n_iter):
-            node = root
-            while node.children_ids:
-                node = self.uct_select(node)
-            depth = len(self._path_to_node(node))
-            if depth < max_depth:
-                children = self.expand(node)
-                node = (random.choice(children)
-                        if children else node)
-            score = self.evaluate(node)
-            self._backpropagate(node, score)  #F
-        return self._best_path(root)
-
-    # --- engine behind the search above -----------------
-    # Listings 5.4b and 5.4c print the four MCTS phases;
-    # these are the methods they call. Kept below the
-    # listing boundary so the search above still reads as
-    # it does in the book.
-
-    def _create_root(self, problem: str) -> ThoughtNode:
-        """Seed a fresh tree with the problem statement.
-
-        Clearing first makes a second search() independent
-        of the first: stale nodes would otherwise keep
-        their visit counts and skew UCT from the start.
-        """
-        self.nodes.clear()
-        root = ThoughtNode(id="n0", content=problem)
-        self.nodes[root.id] = root
-        return root
-
-    def _path_to_node(self, node: ThoughtNode
-                      ) -> ReasoningPath:
-        """Contents from the root down to node, root first."""
-        chain = []
-        current = node
-        seen = set()
-        while current is not None and current.id not in seen:
-            seen.add(current.id)  # a cycle would hang
-            chain.append(current.content)
-            current = (self.nodes.get(current.parent_id)
-                       if current.parent_id else None)
-        chain.reverse()
-        return ReasoningPath(chain)
-
-    def _parse_thoughts(self, response,
-                        parent: ThoughtNode
-                        ) -> list[ThoughtNode]:
-        """Register one child per "- " line of the reply.
-
-        A reply with no readable branches returns [], which
-        search() reads as "no expansion" and falls back to
-        evaluating the parent. A barren node stops growing
-        instead of taking the whole search down with it.
-        """
+    def _parse_thoughts(
+        self,
+        response,
+        parent: ThoughtNode,
+        limit: int,
+    ) -> list[ThoughtNode]:
+        try:
+            text = first_text(response)
+        except ValueError:
+            return []
         children = []
-        for line in _first_text(response).splitlines():
+        for line in text.splitlines():
+            if len(children) >= max(0, limit):
+                break
             line = line.replace("**", "").strip()
             if not line.startswith(("-", "*", "•")):
                 continue
@@ -193,88 +164,104 @@ class ParallelReasoner:
             children.append(child)
         return children
 
-    def _backpropagate(self, node: ThoughtNode,
-                       score: float) -> None:
-        """Credit node and every ancestor with this result.
+    def uct_select(
+        self,
+        node: ThoughtNode,
+        c: float = 1.41,
+    ) -> ThoughtNode | None:
+        best = None
+        best_uct = -float("inf")
+        for child_id in node.children_ids:
+            child = self.nodes[child_id]
+            if child.visits == 0:
+                return child
+            exploit = child.total_value / child.visits
+            explore = c * math.sqrt(
+                math.log(max(node.visits, 1)) / child.visits
+            )
+            if exploit + explore > best_uct:
+                best_uct = exploit + explore
+                best = child
+        return best
 
-        Each ancestor's visit count therefore covers all
-        the visits below it, which is the invariant
-        uct_select's math.log(node.visits) rests on.
-        """
-        current = node
+    def search(
+        self,
+        problem: str,
+        max_depth: int = 4,
+        n_iter: int = 10,
+        n_branches: int = 3,
+    ) -> ReasoningPath:
+        root = self._create_root(problem)
+        for _ in range(max(0, n_iter)):
+            node = root
+            while node.children_ids:
+                selected = self.uct_select(node)
+                if selected is None:
+                    break
+                node = selected
+            depth = max(0, len(self._path_to_node(node)) - 1)
+            if depth < max(0, max_depth):
+                children = self.expand(node, n_branches)
+                if children:
+                    node = random.choice(children)
+            score = self.evaluate(node)
+            self._backpropagate(node, score)
+        return self._best_path(root)
+
+    def _create_root(self, problem: str) -> ThoughtNode:
+        self.nodes.clear()
+        root = ThoughtNode(id="n0", content=problem)
+        self.nodes[root.id] = root
+        return root
+
+    def _path_to_node(self, node: ThoughtNode) -> ReasoningPath:
+        chain = []
+        current: ThoughtNode | None = node
+        seen = set()
+        while current is not None and current.id not in seen:
+            seen.add(current.id)
+            chain.append(current.content)
+            current = (
+                self.nodes.get(current.parent_id)
+                if current.parent_id
+                else None
+            )
+        chain.reverse()
+        return ReasoningPath(chain)
+
+    def _backpropagate(self, node: ThoughtNode, score: float) -> None:
+        current: ThoughtNode | None = node
         seen = set()
         while current is not None and current.id not in seen:
             seen.add(current.id)
             current.visits += 1
             current.total_value += score
-            current = (self.nodes.get(current.parent_id)
-                       if current.parent_id else None)
+            current = (
+                self.nodes.get(current.parent_id)
+                if current.parent_id
+                else None
+            )
 
-    def _best_path(self, root: ThoughtNode
-                   ) -> ReasoningPath:
-        """Follow the most-visited child at each level.
-
-        Visits, not score: a high score from one visit is a
-        lucky sample, while a high visit count means UCT
-        kept choosing that branch against competition.
-        """
+    def _best_path(self, root: ThoughtNode) -> ReasoningPath:
         node = root
         while node.children_ids:
-            visited = [self.nodes[cid]
-                       for cid in node.children_ids
-                       if self.nodes[cid].visits > 0]
+            visited = [
+                self.nodes[child_id]
+                for child_id in node.children_ids
+                if self.nodes[child_id].visits > 0
+            ]
             if not visited:
                 break
-            node = max(visited, key=lambda c: c.visits)
+            node = max(
+                visited,
+                key=lambda child: (
+                    child.visits,
+                    child.total_value / child.visits,
+                ),
+            )
         return self._path_to_node(node)
 
 
-# --- parser behind evaluate above -----------------------
-# Listing 5.4b prints the call to parse_score(); this is the
-# function it calls.
-
-# An unreadable score is no information. Scoring it 0.0
-# would tell the search that the evaluator's silence is
-# evidence against the branch, and UCT would prune a path
-# nobody actually judged.
-_UNSCORED = 0.5
-
-_SCORE_RE = re.compile(
-    r"score\s*[:=]\s*([0-9]*\.?[0-9]+)\s*(%?)", re.I)
-_BARE_RE = re.compile(r"([0-9]*\.?[0-9]+)\s*(%?)")
-
-
-def _first_text(response) -> str:
-    """The reply's first text block, or "" if it has none."""
-    for block in getattr(response, "content", None) or []:
-        if getattr(block, "type", None) in (None, "text"):
-            text = getattr(block, "text", None)
-            if isinstance(text, str):
-                return text
-    return ""
-
-
 def parse_score(response) -> float:
-    """Read SCORE: out of an evaluator's reply.
-
-    Takes the response rather than its text because that is
-    how evaluate() calls it. A bare number is accepted only
-    when it is the entire reply: hunting for the first float
-    inside prose would read "3 steps from done" as 0.03.
-
-    A score outside 0.00-1.00 without a percent sign is off
-    contract on an unknowable scale, so it reads as no score
-    rather than as a guess. Clamping "SCORE: 85" to 1.00
-    would hand the search a near-perfect branch on the
-    strength of a formatting slip.
-    """
-    text = _first_text(response).strip()
-    match = _SCORE_RE.search(text) or _BARE_RE.fullmatch(text)
-    if not match:
-        return _UNSCORED
-    value = float(match.group(1))
-    if match.group(2) == "%":
-        value /= 100.0
-    if not 0.0 <= value <= 1.0:
-        return _UNSCORED
-    return value
+    """Backward-compatible public helper."""
+    return ParallelReasoner._parse_score(response)

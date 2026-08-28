@@ -1,12 +1,12 @@
 """Argus — code-review agent, Ch5 snapshot.
 
 What Argus can do at end of Ch5 (additive over Ch4):
-  + Complexity-routed reasoning:
-      - SIMPLE  diffs → cheap haiku tier, one pass, ~$0.001 per review
-      - MODERATE      → sonnet + chain-of-thought, verifier on weakest step
-      - COMPLEX       → sonnet with extended thinking, deep multi-step trace
-  + Verdict carries the reasoning chain (steps + confidences), not just
-    a summary string — observability through ReviewResult.
+  + Consequence policy runs before difficulty routing and may require review.
+  + Difficulty-routed reasoning:
+      - SIMPLE   → fast direct review
+      - MODERATE → represented decision chain + weakest-step verification
+      - COMPLEX  → adaptive high-effort review
+  + ReviewResult carries the visible decision record and ReasoningTrace.
   + review_diff() now returns (ReviewResult, PerceptionTrace) instead of
     (dict, PerceptionTrace). The dict form was a one-shot prompt; the
     structured result was earned by reasoning.

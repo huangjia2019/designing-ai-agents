@@ -34,7 +34,7 @@ tracks living side by side inside each chapter:
 | Ch2 architecture     | single-pass PRA loop                | `argus/core.py`           | (seed; one LLM call) |
 | Ch3 perception       | + gather & triage code context      | `argus/perception.py`     | `python -m argus.cli <diff>` |
 | Ch4 memory           | + cross-session memory (RAG)        | `argus/memory.py`         | `... --project myapp` |
-| Ch5 reasoning        | + complexity-routed CoT             | `argus/reasoning.py`      | tier=simple/moderate/complex |
+| Ch5 reasoning        | + consequence gate + routed decision records | `argus/reasoning.py` | governed/simple/moderate/complex |
 | Ch6 action           | + tool dispatch + Guardrail Sandwich | `argus/action.py`         | lint / test / fix_apply |
 | Ch7 reflection       | + critic loop + skill library + experience | `argus/reflection.py` + `argus/self_heal.py` | refined verdict, fewer false positives |
 | Ch8 collaboration    | + parallel sub-agents (security/style/complexity) | `argus/collaboration.py` | fan-out + synthesis |
@@ -55,7 +55,7 @@ trades some duplication for pedagogical clarity.
 cd ch10-methodology
 python3 demos/demo_end_to_end_review.py
 
-# Token-waste story (Ch5): 81% savings from complexity routing
+# Synthetic Ch5 routing-budget comparison (not a measured saving)
 python3 demos/demo_token_waste_story.py
 
 # Scope-creep story (Ch6): Guardrail Sandwich blocks 2/3 over-scoped fixes
@@ -80,7 +80,7 @@ designing-ai-agents/
 ├── ch02-architecture/       Ch2 — Argus seed: 38-line PRA loop, cross-framework demos
 ├── ch03-perception/         Ch3 — Argus += eyes (perception triage under budget)
 ├── ch04-memory/             Ch4 — Argus += past (RAG over project history)
-├── ch05-reasoning/          Ch5 — Argus += calibrated thinking (complexity routing)
+├── ch05-reasoning/          Ch5 — Argus += observable, governed reasoning controls
 ├── ch06-action/             Ch6 — Argus += hands (tools through Guardrail Sandwich)
 ├── ch07-reflection/         Ch7 — Argus += self-improvement (critic + skills + replay)
 ├── ch08-collaboration/      Ch8 — Argus += parallel specialists (security/style/complexity)

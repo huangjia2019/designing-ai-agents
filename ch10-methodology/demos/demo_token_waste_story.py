@@ -1,13 +1,12 @@
-"""Demo: Ch5 token-waste story made tangible.
+"""Demo: compare two illustrative routing-budget policies.
 
 Run a review on a 200-line diff first WITHOUT complexity routing
 (treats every diff as COMPLEX), then WITH complexity routing
-(classifies the diff and uses the cheap tier when adequate). The
-token-spend delta is the chapter's claim in numbers.
+(classifies the diff and uses a shallower tier when adequate).
 
-This is NOT calling a real LLM — the demo wires a fake reasoning
-shim so it runs offline. Replace the shim with the live reasoning
-layer to see real cost.
+This makes no measured cost or saving claim. It uses synthetic allocations so
+the control-flow difference remains visible offline. Measure accepted outcomes,
+tokens, latency, and false-simple recoveries on your own workload.
 """
 import sys
 import os
@@ -17,7 +16,7 @@ from argus import ArgusOrchestrator, ArgusMemory, ArgusReasoning, ReviewResult
 
 
 class _CountingReasoning(ArgusReasoning):
-    """Tracks token count by complexity tier (rough proxy)."""
+    """Tracks an illustrative budget allocation by difficulty tier."""
 
     TOKEN_BY_TIER = {"simple": 1500, "moderate": 6000, "complex": 32000}
 
@@ -85,7 +84,11 @@ def main():
     print(f"Without complexity routing: {flat_cost:>6d} tokens (tier={flat_tier})")
     print(f"With    complexity routing: {routed_cost:>6d} tokens (tier={routed_tier})")
     savings = (flat_cost - routed_cost) / flat_cost * 100
-    print(f"Savings: {savings:.1f}%  ({flat_cost - routed_cost} tokens cheaper)")
+    print(
+        "Illustrative allocation delta: "
+        f"{savings:.1f}% ({flat_cost - routed_cost} synthetic tokens)."
+    )
+    print("This is a policy illustration, not a measured production saving.")
 
 
 if __name__ == "__main__":

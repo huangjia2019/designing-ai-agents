@@ -1,10 +1,17 @@
+"""A bounded observe-hypothesize-test-update loop."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
-# anthropic is lazy-imported inside functions that need a live client
+
 try:
     from anthropic import Anthropic
 except ImportError:
     Anthropic = object  # type: ignore[misc,assignment]
+
+from patterns.response_text import first_text
+
 
 MODEL = "claude-sonnet-4-6"
 
@@ -12,8 +19,8 @@ OBSERVE_PROMPT = """Problem under investigation:
 {problem}
 
 Before forming any hypothesis, gather evidence. Propose ONE
-read-only shell command that would tell you most about the
-current state. Reply with the bare command and nothing else.
+read-only command that would tell you most about the current
+state. Reply with the bare command and nothing else.
 """
 
 HYPOTHESIS_PROMPT = """Problem under investigation:
@@ -33,11 +40,10 @@ What has been tried so far:
 {history}
 
 Design ONE experiment that discriminates between this hypothesis
-being true and being false. The predictions must differ; if the
-same result is expected either way, the experiment is worthless.
+being true and being false. The predictions must differ.
 
 Reply in exactly this format:
-ACTION: <one shell command>
+ACTION: <one read-only command>
 IF_TRUE: <what you expect to see if the hypothesis holds>
 IF_FALSE: <what you expect to see if it does not>
 """
@@ -61,20 +67,19 @@ WHY: <one sentence citing the result>
 
 
 def _first_line(text: str) -> str:
-    """First non-empty line, stripped of markdown fencing."""
     for line in text.splitlines():
-        line = line.strip().strip("`").strip()
-        if line and not line.startswith("```"):
-            return line
+        value = line.strip().strip("`").strip()
+        if value and not value.startswith("```"):
+            return value
     return ""
 
 
 def _field(text: str, label: str) -> str | None:
-    """Pull `LABEL: value` out of a labelled reply."""
+    prefix = f"{label.upper()}:"
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.upper().startswith(label + ":"):
-            return stripped[len(label) + 1:].strip()
+        if stripped.upper().startswith(prefix):
+            return stripped[len(prefix):].strip()
     return None
 
 
@@ -83,230 +88,233 @@ class HypothesisStatus(Enum):
     SUPPORTED = "supported"
     REFUTED = "refuted"
 
+
 @dataclass
 class Hypothesis:
     id: str
     description: str
-    status: HypothesisStatus = (
-        HypothesisStatus.ACTIVE)
-    evidence_for: list[str] = field(
-        default_factory=list)
-    evidence_against: list[str] = field(
-        default_factory=list)
+    status: HypothesisStatus = HypothesisStatus.ACTIVE
+    evidence_for: list[str] = field(default_factory=list)
+    evidence_against: list[str] = field(default_factory=list)
 
     @property
-    def evidence_ratio(self) -> float:  #A
-        total = (len(self.evidence_for)
-                 + len(self.evidence_against))
-        return (len(self.evidence_for) / total
-                if total else 0.5)
+    def evidence_ratio(self) -> float:
+        total = len(self.evidence_for) + len(self.evidence_against)
+        return len(self.evidence_for) / total if total else 0.5
+
 
 @dataclass
 class Experiment:
     action: str
-    expected_if_true: str  #B
+    expected_if_true: str
     expected_if_false: str
 
+
 class HypothesisTester:
-    def __init__(self, client: Anthropic,
-                 execute_fn,
-                 max_iterations: int = 8):
+    def __init__(
+        self,
+        client: Anthropic,
+        execute_fn,
+        max_iterations: int = 8,
+    ):
         self.client = client
-        self.execute = execute_fn  #C
-        self.max_iterations = max_iterations
-        self.hypotheses = {}
-        self.observations = []
+        self.execute = execute_fn
+        self.max_iterations = max(0, max_iterations)
+        self.hypotheses: dict[str, Hypothesis] = {}
+        self.observations: list[dict] = []
 
-    def investigate(self, problem):
-        initial_obs = self._observe(problem)  #D
-        self._generate_hypotheses(
-            problem, initial_obs)
+    def investigate(self, problem: str) -> dict:
+        initial_observation = self._observe(problem)
+        self._generate_hypotheses(problem, initial_observation)
 
-        for i in range(self.max_iterations):
+        for _ in range(self.max_iterations):
             active = [
-                h for h in self.hypotheses.values()
-                if h.status == HypothesisStatus.ACTIVE
+                hypothesis
+                for hypothesis in self.hypotheses.values()
+                if hypothesis.status == HypothesisStatus.ACTIVE
             ]
             if not active:
                 break
-            target = min(active,  #E
-                key=lambda h: abs(
-                    h.evidence_ratio - 0.5))
-            test_plan = self._design_experiment(  #G
-                target)
-            observation = self.execute(  #F
-                test_plan.action)
+            target = min(
+                active,
+                key=lambda hypothesis: abs(
+                    hypothesis.evidence_ratio - 0.5
+                ),
+            )
+            experiment = self._design_experiment(target)
+            observation = self._execute(experiment.action)
             self.observations.append({
-                "action": test_plan.action,
+                "phase": "experiment",
+                "hypothesis": target.id,
+                "action": experiment.action,
                 "result": observation,
             })
-            self._analyze(
-                target, test_plan, observation)
+            self._analyze(target, experiment, observation)
 
         return self._summarize_results()
 
-    # --- engine behind the loop above -------------------
-    # Listing 5.5b prints investigate(); these are the
-    # methods it calls. Kept below the listing boundary so
-    # the loop above still reads as it does in the book.
+    def _execute(self, action: str) -> str:
+        try:
+            return str(self.execute(action))
+        except Exception as exc:  # The exception is evidence, not convergence.
+            return f"[execution error] {type(exc).__name__}: {exc}"
 
-    def _observe(self, problem) -> str:
-        """Gather evidence before any hypothesis exists.
-
-        Observing first is what stops the loop from
-        hypothesising and then hunting for confirmation:
-        the evidence is on the table before there is a
-        favoured explanation to defend.
-        """
+    def _observe(self, problem: str) -> str:
         response = self.client.messages.create(
             model=MODEL,
             max_tokens=256,
-            messages=[{"role": "user",
-                       "content": OBSERVE_PROMPT.format(
-                           problem=problem)}],
+            messages=[{
+                "role": "user",
+                "content": OBSERVE_PROMPT.format(problem=problem),
+            }],
         )
-        command = _first_line(
-            response.content[0].text)
-        observation = self.execute(command)
+        command = _first_line(first_text(response))
+        observation = self._execute(command)
         self.observations.append({
+            "phase": "initial_observation",
             "action": command,
             "result": observation,
         })
         return observation
 
     def _generate_hypotheses(
-            self, problem, initial_obs) -> None:
-        """Populate self.hypotheses from the first look."""
+        self,
+        problem: str,
+        initial_observation: str,
+    ) -> None:
         response = self.client.messages.create(
             model=MODEL,
             max_tokens=1024,
-            messages=[{"role": "user",
-                       "content": HYPOTHESIS_PROMPT.format(
-                           problem=problem,
-                           observation=initial_obs)}],
+            messages=[{
+                "role": "user",
+                "content": HYPOTHESIS_PROMPT.format(
+                    problem=problem,
+                    observation=initial_observation,
+                ),
+            }],
         )
-        for line in response.content[0].text.splitlines():
-            line = line.strip()
-            if not line.startswith("-"):
+        for line in first_text(response).splitlines():
+            stripped = line.strip()
+            if not stripped.startswith(("-", "*", "•")):
                 continue
-            description = line.lstrip("-").strip()
+            description = stripped.lstrip("-*• ").strip()
             if not description:
                 continue
-            hid = f"h{len(self.hypotheses) + 1}"
-            self.hypotheses[hid] = Hypothesis(
-                id=hid, description=description)
+            identifier = f"h{len(self.hypotheses) + 1}"
+            self.hypotheses[identifier] = Hypothesis(
+                id=identifier,
+                description=description,
+            )
 
     def _design_experiment(
-            self, hypothesis) -> Experiment:
-        """Ask for one discriminating experiment.
-
-        An unparseable reply yields an empty action, which
-        execute_fn refuses and _analyze reads as evidence.
-        A refusal is a real result; a fabricated fallback
-        command would not be.
-        """
+        self,
+        hypothesis: Hypothesis,
+    ) -> Experiment:
         response = self.client.messages.create(
             model=MODEL,
             max_tokens=512,
-            messages=[{"role": "user",
-                       "content": EXPERIMENT_PROMPT.format(
-                           description=hypothesis.description,
-                           history=self._history())}],
+            messages=[{
+                "role": "user",
+                "content": EXPERIMENT_PROMPT.format(
+                    description=hypothesis.description,
+                    history=self._history(),
+                ),
+            }],
         )
-        text = response.content[0].text
+        text = first_text(response)
         return Experiment(
             action=_field(text, "ACTION") or "",
-            expected_if_true=(
-                _field(text, "IF_TRUE") or ""),
-            expected_if_false=(
-                _field(text, "IF_FALSE") or ""),
+            expected_if_true=_field(text, "IF_TRUE") or "",
+            expected_if_false=_field(text, "IF_FALSE") or "",
         )
 
-    def _analyze(self, hypothesis, experiment,
-                 observation) -> None:
-        """File the result as evidence for or against."""
+    def _analyze(
+        self,
+        hypothesis: Hypothesis,
+        experiment: Experiment,
+        observation: str,
+    ) -> None:
         response = self.client.messages.create(
             model=MODEL,
             max_tokens=512,
-            messages=[{"role": "user",
-                       "content": ANALYZE_PROMPT.format(
-                           description=hypothesis.description,
-                           action=experiment.action,
-                           if_true=experiment.expected_if_true,
-                           if_false=experiment.expected_if_false,
-                           observation=observation)}],
+            messages=[{
+                "role": "user",
+                "content": ANALYZE_PROMPT.format(
+                    description=hypothesis.description,
+                    action=experiment.action,
+                    if_true=experiment.expected_if_true,
+                    if_false=experiment.expected_if_false,
+                    observation=observation,
+                ),
+            }],
         )
-        text = response.content[0].text
+        text = first_text(response)
         verdict = (_field(text, "VERDICT") or "").upper()
-        note = (_field(text, "WHY")
-                or text.strip())[:300]
-        if "SUPPORTS" in verdict:
+        note = (_field(text, "WHY") or text.strip())[:300]
+        if verdict == "SUPPORTS":
             hypothesis.evidence_for.append(note)
-        elif "REFUTES" in verdict:
+        elif verdict == "REFUTES":
             hypothesis.evidence_against.append(note)
         self._settle(hypothesis)
 
-    def _settle(self, hypothesis) -> None:
-        """Close a hypothesis once its evidence is unanimous.
-
-        evidence_ratio decides, not any single verdict
-        string. An experiment carries dual predictions, so
-        a result matching one of them is real evidence and
-        one is enough to close on — but only while nothing
-        contradicts it. Mixed evidence lands near 0.5 and
-        keeps the hypothesis open no matter how many
-        experiments have run, which is the behaviour that
-        matters: contradiction should cost more than
-        repetition buys.
-        """
-        total = (len(hypothesis.evidence_for)
-                 + len(hypothesis.evidence_against))
-        if total < 1:
+    @staticmethod
+    def _settle(hypothesis: Hypothesis) -> None:
+        total = len(hypothesis.evidence_for) + len(
+            hypothesis.evidence_against
+        )
+        if total == 0:
             return
         if hypothesis.evidence_ratio >= 0.8:
-            hypothesis.status = (
-                HypothesisStatus.SUPPORTED)
+            hypothesis.status = HypothesisStatus.SUPPORTED
         elif hypothesis.evidence_ratio <= 0.2:
-            hypothesis.status = (
-                HypothesisStatus.REFUTED)
+            hypothesis.status = HypothesisStatus.REFUTED
 
     def _history(self) -> str:
-        """Experiments already run, for experiment design."""
         if not self.observations:
             return "(nothing yet)"
         return "\n".join(
-            f"- {o['action']} -> {str(o['result'])[:120]}"
-            for o in self.observations
+            f"- {item['action']} -> {str(item['result'])[:120]}"
+            for item in self.observations
         )
 
     def _summarize_results(self) -> dict:
-        """Aggregate the trail. No model call.
-
-        The verdict is arithmetic over evidence the loop
-        actually collected, so it cannot drift from the
-        trail it claims to rest on.
-        """
         ranked = sorted(
             self.hypotheses.values(),
-            key=lambda h: h.evidence_ratio,
+            key=lambda hypothesis: hypothesis.evidence_ratio,
             reverse=True,
         )
         supported = [
-            h for h in ranked
-            if h.status == HypothesisStatus.SUPPORTED
+            item
+            for item in ranked
+            if item.status == HypothesisStatus.SUPPORTED
         ]
+        active = [
+            item
+            for item in ranked
+            if item.status == HypothesisStatus.ACTIVE
+        ]
+        if supported:
+            outcome = "supported"
+            verdict = supported[0].description
+        elif ranked and not active:
+            outcome = "refuted"
+            verdict = "all generated hypotheses were refuted"
+        else:
+            outcome = "inconclusive"
+            verdict = "inconclusive"
         return {
-            "verdict": (supported[0].description
-                        if supported else "inconclusive"),
+            "outcome": outcome,
+            "verdict": verdict,
             "hypotheses": [
-                {"id": h.id,
-                 "description": h.description,
-                 "status": h.status.value,
-                 "evidence_ratio": h.evidence_ratio,
-                 "evidence_for": list(h.evidence_for),
-                 "evidence_against": list(
-                     h.evidence_against)}
-                for h in ranked
+                {
+                    "id": item.id,
+                    "description": item.description,
+                    "status": item.status.value,
+                    "evidence_ratio": item.evidence_ratio,
+                    "evidence_for": list(item.evidence_for),
+                    "evidence_against": list(item.evidence_against),
+                }
+                for item in ranked
             ],
             "observations": list(self.observations),
         }
