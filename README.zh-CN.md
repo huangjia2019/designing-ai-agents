@@ -9,6 +9,16 @@ AI Agent 设计模式书。本仓库是全书的官方配套代码。
 
 English: [README.md](README.md)
 
+## 下一次 MEAP 更新的配套代码
+
+本 `1st-review` 分支准备新版章节的代码，`main` 暂时继续对应已发布的旧版
+MEAP。新版第4、6、7、8、9章请先进入各章的 `current_edition/`，按章内
+README 查找 listing 和运行命令；旧的累计 Argus 接口保留用于兼容，不能与
+新版接口混用。第5章沿用已经同步的推理实现。
+
+具体入口和上线后的切换规则见 [本轮代码说明](docs/meap-update-2026-09.md)。
+各章使用独立 Python 进程；工作目录以各章 README 的命令为准。
+
 > 如果你想按 7 × 6 双轴矩阵查找 28 个独立模式，而不是按书的章节阅读，
 > 请使用 [huangjia2019/agent-design-patterns](https://github.com/huangjia2019/agent-design-patterns)。
 > 那是模式目录；本仓库负责书中的渐进式实现与 Argus 贯穿案例。

@@ -1,83 +1,72 @@
 # Chapter 8 — Collaboration
 
-Four collaboration patterns and the Argus collaboration layer: Argus stops
-reviewing alone and delegates to specialist sub-agents, then reconciles
-what they say.
+## Revised MEAP examples: start here
 
-```
-ch08-collaboration/
-├── argus/
-│   └── collaboration.py              # Listing 8.15 — parallel review dispatch + synthesis
-└── patterns/
-    ├── collaboration_trace.py        # Listing 8.1 — token multiplier, handoff fidelity
-    ├── handoff_chain.py              # Listings 8.2-8.3 — specialists in sequence
-    ├── fan_out_gather.py             # Listings 8.4-8.7 — parallel workers, coordinated merge
-    ├── adversarial_review.py         # Listings 8.8-8.10 — proponent vs reviewer, judged
-    └── hierarchical_delegation.py    # Listings 8.11-8.14 — manager decomposes, workers execute
-```
+The September 2026 chapter's seven listings are implemented under
+[`current_edition/`](current_edition/). A subagent receives a fresh
+context and selected tools. Separate contexts can still share versioned
+artifacts, a claim board and task receipts.
 
-Carried over from earlier chapters (cumulative Argus needs them):
-`action_trace.py`, `chain_of_thought.py`, `complexity_routing.py`,
-`experience_replay.py`, `generator_critic.py`, `guardrail_sandwich.py`,
-`hierarchical_memory.py`, `mcp_client.py`, `plan_and_execute.py`,
-`prompt_chain.py`, `reflection_trace.py`, `self_heal_loop.py`,
-`skill_library.py`, `tool_dispatch.py`.
-
-The `argus/` package is the cumulative snapshot — everything from
-Ch2–Ch7 plus `collaboration.py`.
-
-## Listing → file
-
-Listings are fragments that concatenate in listing order to form each file.
-
-| Listing | File | Adds |
-|---|---|---|
-| 8.1 | `patterns/collaboration_trace.py` | `CollaborationTrace` |
-| 8.2 | `patterns/handoff_chain.py` | `ChainAgent`, `HandoffContext` |
-| 8.3 | `patterns/handoff_chain.py` | `HandoffChain` |
-| 8.4 | `patterns/fan_out_gather.py` | `WorkerTask`, `FanOutGather.decompose` |
-| 8.5 | `patterns/fan_out_gather.py` | `_execute_worker`, `fan_out` |
-| 8.6 | `patterns/fan_out_gather.py` | `gather` |
-| 8.7 | `patterns/fan_out_gather.py` | `execute` |
-| 8.8 | `patterns/adversarial_review.py` | `DebateRound`, `DebateResult`, `AdversarialReview._call_agent` |
-| 8.9 | `patterns/adversarial_review.py` | `debate` — setup and round loop |
-| 8.10 | `patterns/adversarial_review.py` | judge verdict, parsed (continues inside `debate`) |
-| 8.11 | `patterns/hierarchical_delegation.py` | `WorkerRole`, `Subtask`, `decompose` |
-| 8.12 | `patterns/hierarchical_delegation.py` | `execute_worker` |
-| 8.13 | `patterns/hierarchical_delegation.py` | `coordinate` |
-| 8.14 | `patterns/hierarchical_delegation.py` | `_parse_subtasks`, `_build` |
-| 8.15 | `argus/collaboration.py` | `ArgusCollaboration` |
-
-Each file also carries a module docstring and a `__main__` demo that the
-book omits for space.
-
-## Run
+Use Python 3.10 or newer. The examples and tests need no API key, model
+SDK or network access:
 
 ```bash
-python patterns/collaboration_trace.py   # pure Python, no API key needed
-
-export ANTHROPIC_API_KEY=sk-...
-python patterns/fan_out_gather.py
-python patterns/adversarial_review.py
-python patterns/hierarchical_delegation.py
-python patterns/handoff_chain.py
+cd ch08-collaboration
+python3 -m current_edition.demo
+python3 -m unittest discover -s current_edition/tests -v
 ```
 
-The Ch8 pattern files follow the book and take a live `client: Anthropic`.
-They lazy-import `anthropic`, so every module imports cleanly without the
-SDK installed; a key is only needed when a demo actually calls the model.
+The demo preserves three specialist reports, lets the writer and security
+reviewer exchange evidence, and returns a packet requiring a human
+decision. It uses a scripted adapter, not a live model or a performance
+benchmark. A cleared claim board does not authorize merging the change.
 
-`argus/collaboration.py` stays offline-safe: with no client supplied it
-falls back to a stub that answers the same `messages.create(...)`
-interface the patterns call, so the real `FanOutGather` and
-`AdversarialReview` code paths still run without a key. Every sub-agent
-(and the synthesizer, proponent, reviewer, and judge) is a pluggable
-callable — pass LLM-backed ones in production:
+## Current listing map
 
-```python
-from argus import ArgusCollaboration
+Paths below are relative to `current_edition/`.
 
-collab = ArgusCollaboration()          # stub sub-agents, no key needed
-print(collab.parallel_review(diff))
-collab.trace.log()                     # Listing 8.1 metrics
-```
+| Listing | Executable file | Responsibility |
+|---|---|---|
+| 8.1 | `patterns/collaboration_runtime.py` | Fresh context, selected tools and a shared versioned workspace |
+| 8.2 | `patterns/handoff_chain.py` | Typed handoff, receiver checks and return to the owner |
+| 8.3 | `patterns/fan_out_gather.py` | Independent branches; lead-driven repeated fan-out |
+| 8.4 | `patterns/adversarial_review.py` | Writer/reviewer claims and a human review packet |
+| 8.5 | `patterns/hierarchical_delegation.py` | Manager-owned delegation and task dependencies |
+| 8.6 | `patterns/collaboration_trace.py` | Same-task baseline averages and observed comparison ratios |
+| 8.7 | `argus/collaboration.py` | Three specialist reports plus selected-claim review |
+
+The executable runtime supplies workspace record types and helper methods
+omitted from the printed excerpts. It also verifies that a handoff's named
+receiver matches the actual receiver before spawning it. This additional
+identity check is tested alongside the chapter's artifact, evidence and
+acceptance checks.
+
+`AgentRuntime` is the integration seam for a real model's tool-calling
+loop. `demo_runtime.py` provides the deterministic implementation used
+by the offline examples. The in-memory workspace is not a production
+permission system, durable database or cross-process transaction manager;
+the host must supply those controls.
+
+## What the tests establish
+
+- Average baseline tokens, latency and quality, not a single convenient run.
+- Return of incomplete or misaddressed handoffs to their owner.
+- Fresh agent contexts with a common workspace.
+- Result-driven follow-up fan-out and rejection of dependent branches.
+- Writer/reviewer separation with a human decision at the end.
+- Manager-owned dependent work.
+- Retention of specialist artifacts and rejection of a partial worker set.
+
+The scripted tests exercise these contracts. They do not establish live
+model quality, benchmark speedup or production security.
+
+## Earlier-edition compatibility
+
+The existing top-level `argus/`, `patterns/` and `demos/` remain
+available for the earlier cumulative coding-agent examples and their
+downstream callers. They are not the revised chapter's listing entry
+points. Start from `current_edition/` when reading the updated MEAP.
+
+The review branch carries the revised examples while `main` supports
+the preceding published MEAP. The stable branch is promoted only after
+Manning releases the corresponding update.

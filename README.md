@@ -6,8 +6,19 @@
 
 **[*Designing AI Agents*](https://hubs.la/Q04hCsH10)** — the design-pattern catalogue for production AI agents. (Manning)
 
-This repository is the official source code for the book. It contains two
-tracks living side by side inside each chapter:
+This repository is the official source code for the book.
+
+## Preparing the next MEAP update
+
+This `1st-review` branch includes the revised chapter implementations.
+`main` remains on the earlier published MEAP until the new update is live.
+Start with the [September code-update guide](docs/meap-update-2026-09.md)
+to find the listing map and runnable entry point for your chapter. Chapters
+4, 6, 7, 8, and 9 have explicit `current_edition/` packages; their older
+cumulative examples are retained for compatibility.
+
+Alongside these revised listing packages, two existing tracks live side
+by side inside each chapter:
 
 - **`argus/`** — Argus, the running-example PR-review agent, evolves
   **cumulatively** from Ch2 to Ch10. Each chapter adds **one cognitive

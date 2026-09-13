@@ -1,77 +1,82 @@
 # Chapter 6 — Action
 
-Four action patterns and the Argus action layer: how an agent's decisions
-become tool calls, plans, and guarded side effects.
+## Revised MEAP examples: start here
 
-```
-ch06-action/
-├── argus/
-│   └── action.py                     # Argus action layer — wires the three §6.8 checkpoint capabilities
-└── patterns/
-    ├── action_trace.py               # Observability dataclass for every tool call
-    ├── prompt_chain.py               # Prompt Chaining — pipeline steps with quality gates
-    ├── tool_dispatch.py              # Tool Dispatch — capability bus + semantic routing
-    ├── mcp_client.py                 # MCP tool discovery over the real mcp SDK
-    ├── plan_and_execute.py           # Plan-and-Execute — planner/executor split with DAG replanning
-    └── guardrail_sandwich.py         # Guardrail Sandwich — input/execution/output validation layers
-```
+The September 2026 revision teaches action as a bounded, verifiable state
+change. Its sixteen listings are assembled in
+[`current_edition/action.py`](current_edition/action.py), in book order.
+The shared contract and evidence types stay in one module so readers can
+run the complete examples without resolving cross-listing imports.
 
-## Listing map
-
-| Listing | File | Contents |
-|---|---|---|
-| 6.1 | `patterns/action_trace.py` | `ActionTrace` + `log()` |
-| 6.2 | `patterns/prompt_chain.py` | `StepResult`, `PipelineStep` |
-| 6.3 | `patterns/prompt_chain.py` | `PromptChain` (`add_step`, `run`) |
-| 6.4 | `patterns/tool_dispatch.py` | `ToolDefinition`, `ToolResult`, `ToolDispatcher.select_tools` |
-| 6.5 | `patterns/tool_dispatch.py` | `ToolDispatcher.execute`, `_repair_args` |
-| 6.5b | `patterns/tool_dispatch.py` | `Tool`, `Toolbox` — the registry without the routing |
-| 6.6 | `patterns/mcp_client.py` | `connect_mcp_server` — MCP tool discovery |
-| 6.7 | `patterns/plan_and_execute.py` | `TaskStatus`, `Task`, `Plan.ready_tasks` |
-| 6.8 | `patterns/plan_and_execute.py` | `PlanAndExecuteAgent.create_plan`, `execute_task` |
-| 6.9 | `patterns/plan_and_execute.py` | `PlanAndExecuteAgent.run` |
-| 6.10 | `patterns/guardrail_sandwich.py` | `RiskLevel`, `SafetyPolicy` |
-| 6.11 | `patterns/guardrail_sandwich.py` | `GuardrailSandwich.execute_safely` |
-| 6.12 | `patterns/guardrail_sandwich.py` | `_classify_risk`, `_filter_output` |
-| 6.13 | `argus/action.py` | `_run_lint`, `_run_tests`, `_apply_fix`, `default_policy` |
-| 6.14 | `argus/action.py` | `ArgusAction.__init__` — the facade |
-| 6.15 | `argus/action.py` | `call_tool`, `_trace`, and the three named actions |
-
-Listings that share a file concatenate in listing-number order. Two helpers
-the chapter calls but never prints are implemented alongside them and marked
-in the source: `_filter_input` (called by Listing 6.11) and `_parse_plan`
-(called by Listing 6.8).
-
-`ArgusAction` uses the `GuardrailSandwich(policy, human_fn=...)` contract and
-calls `execute_safely(tool_name, arguments, executor)`. The sandwich returns
-a verdict dictionary; `_trace` adapts it into Listing 6.1's `ActionTrace` and
-preserves the human decision for approved or declined actions. `Tool` and
-`Toolbox` come from Listing 6.5b, and `SafetyPolicy.require_human_tools` comes
-from Listing 6.10. Prompt Chaining and Plan-and-Execute remain independent
-pattern examples rather than hidden dependencies of the Argus facade.
-
-Carried over from earlier chapters (cumulative Argus needs them):
-`chain_of_thought.py`, `complexity_routing.py`, `hierarchical_memory.py`.
-
-The `argus/` package is the cumulative snapshot — Ch2's core plus
-perception (Ch3), memory (Ch4), reasoning (Ch5), and now `action.py`.
-
-## Run
+Use Python 3.10 or newer. No third-party package, model key, or payment
+provider is needed for the revised examples:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-...
-python -m argus.cli --diff-file some.diff --project demo
+cd ch06-action
+python3 -m current_edition.demo
+python3 -m unittest discover -s current_edition/tests -v
 ```
 
-The pattern modules guard their `anthropic` import, and `mcp_client.py` guards
-its `mcp` import the same way, so everything imports cleanly without either
-SDK; a live key is only needed when a pattern actually calls the model, and
-`connect_mcp_server` opens no connection until it is awaited. `ArgusAction`
-runs without a key — its tools are `ruff`, `pytest`, and a file edit, all
-gated by the sandwich.
+The offline payroll demo prints an accepted first attempt, an unknown
+repeat requiring verification, and a rejected changed amount. The
+simulated provider is called exactly once. No money moves. An unknown
+result is not permission to retry a write blindly.
 
-Listing 6.6 needs the MCP SDK, which is not in `requirements.txt`:
+The test suite also checks unapproved amounts, cross-entity and stale
+arguments, commit identity, guarded outcomes, plan dependencies,
+checkpoint round-trips and bounded replanning.
+
+## Current listing map
+
+All entries below refer to `current_edition/action.py`; each listing has
+a numbered comment marking its start.
+
+| Listing | Mechanism |
+|---|---|
+| 6.1 | `ActionContract`, `ActionAttempt` |
+| 6.2 | `Artifact`, `GateResult`, `ChainStep` |
+| 6.3 | `run_chain`: stop rejected artifacts from propagating |
+| 6.4 | `verified_patch_gate`: bind evidence to the patch |
+| 6.5 | `TrustedValue`, `ToolSpec`, `DispatchContext`, `ToolIntent` |
+| 6.6 | `ToolRegistry`: eligible capability surface |
+| 6.7 | `CommitStore`, argument binding, request digest and admission |
+| 6.8 | `dispatch`: one executable entry point |
+| 6.9 | Versioned plan, step and evidence records |
+| 6.10 | Plan validation, ready work and accepting a completed step |
+| 6.11 | Atomic local checkpoint and reload |
+| 6.12 | Bounded local replan |
+| 6.13 | Guarded runner and execution contracts |
+| 6.14 | `run_guarded`: preconditions, execution and postconditions |
+| 6.15 | Payroll receipt evidence and pre/postcondition checks |
+| 6.16 | `ArgusAction`: registered guards around admitted calls |
+
+Host applications still supply trusted state, runners, independent
+verifiers and production storage. The in-memory commit store demonstrates
+the admission contract; it is not a distributed transaction coordinator.
+A local checkpoint does not roll back a remote side effect. The examples
+do not provide operating-system isolation or a real payment integration.
+
+## Earlier-edition compatibility
+
+The existing `argus/` and `patterns/` directories retain the preceding
+MEAP's cumulative coding-agent APIs. Later cumulative snapshots and older
+readers may still depend on them; they are **not the listing map for the
+revised chapter**. In particular, the old no-argument
+`argus.action.ArgusAction` and the revised
+`current_edition.action.ArgusAction(registry, guarded, commits)`
+are different interfaces.
+
+The earlier cumulative CLI remains available:
 
 ```bash
-pip install mcp        # only for Listing 6.6
+python3 -m argus.cli --diff-file some.diff --project demo
 ```
+
+That earlier CLI's live model path needs `ANTHROPIC_API_KEY` and its
+dependencies. Its optional MCP example requires the MCP SDK. None of
+those dependencies is needed for `current_edition`.
+
+While Manning prepares the revised MEAP, these examples are published on
+`1st-review`. `main` continues to support the prior published MEAP until
+the release is promoted. Historical code remains available through the
+repository's version history.

@@ -1,5 +1,27 @@
 # Chapter 7 — Reflection
 
+## Revised MEAP examples: start here
+
+Start with [`current_edition/`](current_edition/README.md) for the revised
+chapter's 20 executable listings, an offline demo, and 39 regression tests.
+It implements bounded Generator-Critic review and Self-Heal recovery,
+evidence-backed Skill Package admission and routing, and scoped Experience
+Replay. Python 3.10+ is required; no API key or extra packages are needed.
+
+```bash
+python ch07-reflection/current_edition/demo.py
+python -m unittest discover -s ch07-reflection/current_edition/tests -v
+```
+
+The commands above run from the repository root. They do not modify a real
+workspace or contact a model provider.
+
+## Earlier cumulative examples (compatibility)
+
+The `argus/` and `patterns/` modules below are retained for readers of the
+earlier chapter and the cumulative Argus demo. They are not substitutes for
+the current edition's listing implementations.
+
 Four reflection patterns and the Argus reflection layer: the agent
 critiques its own output, heals failed fixes, and turns experience into
 reusable skills.
