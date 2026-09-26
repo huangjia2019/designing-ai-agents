@@ -67,7 +67,7 @@ def review_diff(
         lint_trace = action.run_lint(repo_root=repo_root)
         if not lint_trace.guardrail_blocked and lint_trace.output:
             action_evidence.append(
-                f"lint: returncode={lint_trace.output.get('returncode')}"
+                f"lint: {str(lint_trace.output)[:200]}"
             )
 
     context = _format_context(selected, past, action_evidence, skill_hits)

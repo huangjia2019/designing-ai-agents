@@ -28,13 +28,11 @@ class _Stub:
         self._items.append(self._Result(text, score=(metadata or {}).get("importance", 0.5)))
     def search(self, query, top_k=5):
         terms = [t.lower() for t in str(query).split() if len(t) > 3]
-        if not terms:
-            return []
         scored = []
         for r in self._items:
             overlap = sum(1 for t in terms if t in r.text.lower())
             if overlap:
-                relevance = overlap / len(terms)
+                relevance = overlap / len(terms)  # normalized retrieval relevance (0..1)
                 scored.append((relevance, self._Result(r.text, score=relevance)))
         scored.sort(key=lambda x: -x[0])
         return [r for _, r in scored[:top_k]]

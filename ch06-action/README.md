@@ -1,35 +1,75 @@
 # Chapter 6 — Action
 
-Four action patterns and the Argus action layer: how an agent's decisions
-become tool calls, plans, and guarded side effects.
+## Current MEAP examples
 
-```
-ch06-action/
-├── argus/
-│   └── action.py                     # Argus action layer — wires the five §6.8 checkpoint capabilities
-└── patterns/
-    ├── action_trace.py               # Observability dataclass for every tool call
-    ├── prompt_chain.py               # Prompt Chaining — pipeline steps with quality gates
-    ├── tool_dispatch.py              # Tool Dispatch — capability bus + semantic routing
-    ├── mcp_client.py                 # Minimal MCP client used by tool dispatch
-    ├── plan_and_execute.py           # Plan-and-Execute — planner/executor split with DAG replanning
-    └── guardrail_sandwich.py         # Guardrail Sandwich — input/execution/output validation layers
-```
+Chapter 6 teaches action as a bounded, verifiable state change. Its sixteen
+listings are assembled in
+[`current_edition/action.py`](current_edition/action.py), in book order.
+The shared contract and evidence types stay in one module so readers can
+run the complete examples without resolving cross-listing imports.
 
-Carried over from earlier chapters (cumulative Argus needs them):
-`chain_of_thought.py`, `complexity_routing.py`, `hierarchical_memory.py`.
-
-The `argus/` package is the cumulative snapshot — Ch2's core plus
-perception (Ch3), memory (Ch4), reasoning (Ch5), and now `action.py`.
-
-## Run
+Use Python 3.10 or newer. No third-party package, model key, or payment
+provider is needed for these examples:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-...
-python patterns/prompt_chain.py
-python patterns/tool_dispatch.py
+cd ch06-action
+python3 -m current_edition.demo
+python3 -m unittest discover -s current_edition/tests -v
 ```
 
-Pattern files lazy-import `anthropic`, so everything imports cleanly
-without the SDK; a live key is only needed when a demo actually calls
-the model.
+The offline payroll demo prints an accepted first attempt, an unknown
+repeat requiring verification, and a rejected changed amount. The
+simulated provider is called exactly once. No money moves. An unknown
+result is not permission to retry a write blindly.
+
+The test suite also checks unapproved amounts, cross-entity and stale
+arguments, commit identity, guarded outcomes, plan dependencies,
+checkpoint round-trips and bounded replanning.
+
+## Current listing map
+
+All entries below refer to `current_edition/action.py`; each listing has
+a numbered comment marking its start.
+
+| Listing | Mechanism |
+|---|---|
+| 6.1 | `ActionContract`, `ActionAttempt` |
+| 6.2 | `Artifact`, `GateResult`, `ChainStep` |
+| 6.3 | `run_chain`: stop rejected artifacts from propagating |
+| 6.4 | `verified_patch_gate`: bind evidence to the patch |
+| 6.5 | `TrustedValue`, `ToolSpec`, `DispatchContext`, `ToolIntent` |
+| 6.6 | `ToolRegistry`: eligible capability surface |
+| 6.7 | `CommitStore`, argument binding, request digest and admission |
+| 6.8 | `dispatch`: one executable entry point |
+| 6.9 | Versioned plan, step and evidence records |
+| 6.10 | Plan validation, ready work and accepting a completed step |
+| 6.11 | Atomic local checkpoint and reload |
+| 6.12 | Bounded local replan |
+| 6.13 | Guarded runner and execution contracts |
+| 6.14 | `run_guarded`: preconditions, execution and postconditions |
+| 6.15 | Payroll receipt evidence and pre/postcondition checks |
+| 6.16 | `ArgusAction`: registered guards around admitted calls |
+
+Host applications still supply trusted state, runners, independent
+verifiers and production storage. The in-memory commit store demonstrates
+the admission contract; it is not a distributed transaction coordinator.
+A local checkpoint does not roll back a remote side effect. The examples
+do not provide operating-system isolation or a real payment integration.
+
+## Earlier-edition compatibility
+
+The existing `argus/` and `patterns/` directories support the cumulative
+coding-agent demo; they are **not the listing map for the current chapter**.
+In particular, the no-argument `argus.action.ArgusAction` and
+`current_edition.action.ArgusAction(registry, guarded, commits)`
+are different interfaces.
+
+The earlier cumulative CLI remains available:
+
+```bash
+python3 -m argus.cli --diff-file some.diff --project demo
+```
+
+That CLI's live model path needs `ANTHROPIC_API_KEY` and its
+dependencies. Its optional MCP example requires the MCP SDK. None of
+those dependencies is needed for `current_edition`.

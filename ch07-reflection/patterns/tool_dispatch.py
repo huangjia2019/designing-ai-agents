@@ -1,12 +1,155 @@
-"""Tool Dispatch pattern — model picks the right tool from a registry.
+"""Tool Dispatch — the capability bus connecting agents to tools.
 
-The minimal-tool-set principle (Lance Martin, 2026): ~12 atomic tools beat
-100+ specialized ones because the LLM composes them. This module gives you
-the simplest dispatch loop: a Tool dataclass, a Toolbox registry, and a
-dispatch function that asks the model which tool to call next and runs it.
+Book: Chapter 6, Listing 6.4 (registry + semantic routing) and Listing 6.5
+(execution with retry and self-repair).
+
+The dispatcher keeps a registry of tool definitions, uses a cheap LLM call to
+select only the relevant tools for a query (semantic routing keeps the context
+window lean), then validates, executes, and self-repairs malformed arguments.
+
+`Tool` and `Toolbox` at the bottom are the small registry the Argus facade
+uses (Listing 6.13); §6.8 names this module as the home of both "the Toolbox
+and self-repair logic".
 """
-from dataclasses import dataclass, field
-from typing import Callable, Any
+import json
+from dataclasses import dataclass
+from typing import Any, Callable
+
+try:  # keeps this module importable without the SDK installed
+    from anthropic import Anthropic
+except ImportError:  # pragma: no cover
+    Anthropic = None
+
+
+@dataclass
+class ToolDefinition:
+    name: str
+    description: str
+    parameters: dict
+    handler: callable
+    retry_count: int = 2
+
+
+@dataclass
+class ToolResult:
+    tool_name: str
+    success: bool
+    output: str
+    error: str = ""
+
+
+class ToolDispatcher:
+    """Capability bus connecting agents to tools."""
+
+    def __init__(self, client: Anthropic):
+        self.client = client
+        self.registry: dict[
+            str, ToolDefinition
+        ] = {}
+
+    def register(self, tool):
+        self.registry[tool.name] = tool
+
+    def select_tools(  # Semantic routing selects relevant tools only
+        self, query: str,
+        max_tools: int = 5,
+    ) -> list[ToolDefinition]:
+        summaries = "\n".join(
+            f"- {t.name}: {t.description}"
+            for t in self.registry.values()
+        )
+        resp = (
+            self.client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=256,
+                messages=[{
+                    "role": "user",
+                    "content":
+                    f"Task: {query}\n\n"
+                    f"Select up to "
+                    f"{max_tools} tools."
+                    f"\n\n{summaries}\n\n"
+                    f"Comma-separated "
+                    f"tool names only.",
+                }],
+            )
+        )
+        names = [
+            n.strip() for n in
+            resp.content[0].text.split(",")
+        ]
+        return [
+            self.registry[n]
+            for n in names
+            if n in self.registry
+        ][:max_tools]
+
+    def execute(  # Retry with self-repair on TypeError
+        self, tool_name: str,
+        arguments: dict,
+    ) -> ToolResult:
+        tool = self.registry.get(tool_name)
+        if not tool:
+            return ToolResult(
+                tool_name, False, "",
+                f"Unknown: {tool_name}",
+            )
+        last_err = ""
+        retries = tool.retry_count + 1
+        for attempt in range(retries):
+            try:
+                out = tool.handler(**arguments)
+                return ToolResult(
+                    tool_name, True, str(out),
+                )
+            except TypeError as e:
+                fixed = self._repair_args(
+                    tool, arguments, str(e),
+                )
+                if fixed and fixed != arguments:
+                    arguments = fixed
+                    continue
+                last_err = str(e)
+            except Exception as e:
+                last_err = str(e)
+        return ToolResult(
+            tool_name, False, "", last_err,
+        )
+
+    def _repair_args(  # LLM fixes malformed arguments via schema
+        self, tool, arguments, error,
+    ):
+        prompt = (
+            f"Fix arguments.\n"
+            f"Error: {error}\n"
+            f"Schema: "
+            f"{json.dumps(tool.parameters)}\n"
+            f"Args: "
+            f"{json.dumps(arguments)}\n"
+            f"Reply JSON only."
+        )
+        try:
+            resp = (
+                self.client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=512,
+                    messages=[{
+                        "role": "user",
+                        "content": prompt,
+                    }],
+                )
+            )
+            return json.loads(
+                resp.content[0].text
+            )
+        except Exception:
+            return None
+
+
+# --- The small registry the Argus facade wires (Listing 6.13) ----------
+# ToolDispatcher above is the chapter's teaching implementation: it talks to
+# the model to route and repair. Argus already knows which tool it wants, so
+# it only needs the registry half — that is what Tool/Toolbox provide.
 
 
 @dataclass
@@ -16,16 +159,6 @@ class Tool:
     description: str
     fn: Callable[..., Any]
     retry_count: int = 2  # cap retries on the same tool
-
-
-@dataclass
-class ToolCall:
-    """One round of tool invocation: who called what with what result."""
-    tool_name: str
-    arguments: dict
-    output: Any = None
-    error: str | None = None
-    duration_ms: float = 0.0
 
 
 class Toolbox:
@@ -57,17 +190,3 @@ class Toolbox:
 
     def __len__(self) -> int:
         return len(self._tools)
-
-
-def dispatch(toolbox: Toolbox, name: str, arguments: dict) -> ToolCall:
-    """Run the named tool with the given args, capturing output or error."""
-    import time
-    tool = toolbox.get(name)
-    call = ToolCall(tool_name=name, arguments=arguments)
-    t0 = time.perf_counter()
-    try:
-        call.output = tool.fn(**arguments)
-    except Exception as e:
-        call.error = f"{type(e).__name__}: {e}"
-    call.duration_ms = (time.perf_counter() - t0) * 1000
-    return call

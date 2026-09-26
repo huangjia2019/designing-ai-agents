@@ -24,7 +24,7 @@ Respond with JSON: {"summary": "...", "comments": [
 
     # --- REASONING: Claude analyzes ---  #B
     response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-sonnet-4-6",
         max_tokens=2048,
         system=system,
         messages=[{"role": "user", "content": user_msg}],

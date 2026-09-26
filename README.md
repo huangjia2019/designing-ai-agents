@@ -6,8 +6,15 @@
 
 **[*Designing AI Agents*](https://hubs.la/Q04hCsH10)** — the design-pattern catalogue for production AI agents. (Manning)
 
-This repository is the official source code for the book. It contains two
-tracks living side by side inside each chapter:
+This repository is the official source code for the book.
+
+## Current MEAP companion code
+
+This repository matches the September 2026 MEAP update of *Designing AI
+Agents*. The [MEAP code guide](docs/meap-update-2026-09.md) maps each book
+listing to its runnable source file and verification command.
+
+The examples are organized in two tracks:
 
 - **`argus/`** — Argus, the running-example PR-review agent, evolves
   **cumulatively** from Ch2 to Ch10. Each chapter adds **one cognitive
@@ -15,7 +22,8 @@ tracks living side by side inside each chapter:
   `from argus import ...` so the reader runs the chapter's Argus directly:
   `python -m argus.cli <diff> --project <name>`.
 - **`patterns/`** — independent pattern demos for everything the chapter
-  introduces. Not every pattern integrates into Argus. Those patterns live here as runnable references.
+  introduces. Patterns that do not belong in the cumulative Argus example
+  remain here as runnable references.
 
 中文版：[README.zh-CN.md](README.zh-CN.md)
 
@@ -33,7 +41,7 @@ tracks living side by side inside each chapter:
 | Ch2 architecture     | single-pass PRA loop                | `argus/core.py`           | (seed; one LLM call) |
 | Ch3 perception       | + gather & triage code context      | `argus/perception.py`     | `python -m argus.cli <diff>` |
 | Ch4 memory           | + cross-session memory (RAG)        | `argus/memory.py`         | `... --project myapp` |
-| Ch5 reasoning        | + complexity-routed CoT             | `argus/reasoning.py`      | tier=simple/moderate/complex |
+| Ch5 reasoning        | + consequence gate + routed decision records | `argus/reasoning.py` | governed/simple/moderate/complex |
 | Ch6 action           | + tool dispatch + Guardrail Sandwich | `argus/action.py`         | lint / test / fix_apply |
 | Ch7 reflection       | + critic loop + skill library + experience | `argus/reflection.py` + `argus/self_heal.py` | refined verdict, fewer false positives |
 | Ch8 collaboration    | + parallel sub-agents (security/style/complexity) | `argus/collaboration.py` | fan-out + synthesis |
@@ -54,7 +62,7 @@ trades some duplication for pedagogical clarity.
 cd ch10-methodology
 python3 demos/demo_end_to_end_review.py
 
-# Token-waste story (Ch5): 81% savings from complexity routing
+# Synthetic Ch5 routing-budget comparison (not a measured saving)
 python3 demos/demo_token_waste_story.py
 
 # Scope-creep story (Ch6): Guardrail Sandwich blocks 2/3 over-scoped fixes
@@ -64,8 +72,10 @@ python3 demos/demo_scope_creep_story.py
 python3 demos/demo_critic_loop_story.py
 ```
 
-For real LLM responses, set `ANTHROPIC_API_KEY` and the demos transparently
-switch from the offline shim to live Sonnet calls.
+For real Argus responses, set `ANTHROPIC_API_KEY`; the core demos then switch
+from their offline shim to live Sonnet calls. The optional Google ADK examples
+are live-only and require `GOOGLE_API_KEY` plus
+`GOOGLE_GENAI_USE_VERTEXAI=FALSE`.
 
 ---
 
@@ -77,7 +87,7 @@ designing-ai-agents/
 ├── ch02-architecture/       Ch2 — Argus seed: 38-line PRA loop, cross-framework demos
 ├── ch03-perception/         Ch3 — Argus += eyes (perception triage under budget)
 ├── ch04-memory/             Ch4 — Argus += past (RAG over project history)
-├── ch05-reasoning/          Ch5 — Argus += calibrated thinking (complexity routing)
+├── ch05-reasoning/          Ch5 — Argus += observable, governed reasoning controls
 ├── ch06-action/             Ch6 — Argus += hands (tools through Guardrail Sandwich)
 ├── ch07-reflection/         Ch7 — Argus += self-improvement (critic + skills + replay)
 ├── ch08-collaboration/      Ch8 — Argus += parallel specialists (security/style/complexity)
@@ -92,7 +102,7 @@ Inside every `chNN-*/`:
 ```
 argus/        cumulative Argus snapshot for this chapter
 patterns/     independent pattern demos (the rest of the chapter's listings)
-demos/        optional cross-framework / story-driven scripts (Ch2, Ch10)
+demos/        optional cross-framework / story-driven scripts (Ch2, Ch8, Ch10)
 ```
 
 ---
@@ -103,25 +113,32 @@ demos/        optional cross-framework / story-driven scripts (Ch2, Ch10)
 pip install -r requirements.txt
 ```
 
-`anthropic` is the only hard dependency to run the cli/demos against a
-live model. `patterns/hierarchical_memory.py` expects a `vector_db` argument
-with `.search(query, top_k)` and `.upsert(text, metadata)` methods — the
-demos ship a tiny `_Stub` so they run offline; in production swap with
-`chromadb` / `qdrant` / `faiss`.
+This installs the shared dependencies used across the chapter examples; it
+does not turn the repository into one global Python package. Run code from a
+single chapter directory so its chapter-local `argus` and `patterns` modules
+remain unambiguous. `anthropic` supports the live Argus path, while
+`openai-agents`, `langgraph`, and `google-adk` support the cross-framework
+examples. The ADK version is constrained to the tested 2.7 series because its
+older workflow-agent primitives are already deprecated.
+
+`patterns/hierarchical_memory.py` expects a `vector_db` argument with
+`.search(query, top_k)` and `.upsert(text, metadata)` methods. The demos ship
+a tiny `_Stub` so they run offline; in production, replace it with the vector
+store used by your system.
 
 ---
 
 ## Design principles in this repo
 
 1. **Cumulative Argus**: each chapter's `argus/core.py` builds on the prior
-   chapter. Reading `ch10/argus/orchestrator.py` you see the §10.10 promise
-   "every method call maps to a working class from Ch3-Ch9" — cashed.
+   chapter. The Chapter 10 orchestrator implements the §10.10 contract: every
+   method call maps to a working class from Chapters 3–9.
 2. **Two tracks per chapter**: `argus/` (composition into Argus) and
    `patterns/` (independent demos). Not every pattern integrates into the
-   coding-agent storyline — that's by design.
-3. **Offline-safe**: every demo runs without an API key by falling back
-   to deterministic shims; set `ANTHROPIC_API_KEY` to switch to live.
+   coding-agent storyline; the independent track keeps those examples runnable.
+3. **Offline-first core**: the pattern modules and capstone stories run without
+   an API key. Cross-framework examples that require a live provider say so in
+   their chapter README.
 4. **Observable**: every cognitive module emits a `Trace` dataclass.
    Ch10's `OrchestrationResult` aggregates them — perception trace,
    action log, reflection meta, collaboration meta, governance meta.
-
