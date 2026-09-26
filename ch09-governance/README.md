@@ -33,10 +33,9 @@ python3 -m unittest discover -s ch09-governance/tests -v
 ## Listing → executable module
 
 The chapter uses logical paths such as `patterns/approval_gate.py` and
-`argus/governance.py`. Their current implementations are isolated under
-`current_edition/` here until the cumulative examples are integrated. Listings
-concatenate in order within each module; ordinary assembly imports are added
-to the governance facade.
+`argus/governance.py`. Their executable implementations are under
+`current_edition/`. Listings concatenate in order within each module; ordinary
+assembly imports are added to the governance facade.
 
 | Listing | Current executable file | Adds |
 |---|---|---|
@@ -143,11 +142,5 @@ operating-system sandbox or provider integration.
 
 ## Earlier cumulative snapshot
 
-`argus/` composes the earlier chapter snapshots and continues to import the
-existing `patterns/` implementations. Those files are retained unchanged for
-compatibility. For the current chapter, import from `current_edition` as above.
-
-The older `permission_gate.py`, `trust_levels.py`, `audit_log.py`,
-`policy_engine.py`, `governance_trace.py`, and `sandbox.py` represent an
-earlier six-pattern draft. They are historical examples, not the four
-governance patterns taught in the current chapter.
+`argus/` and `patterns/` support the cumulative coding-agent demo. For the
+current chapter listings, import from `current_edition` as shown above.

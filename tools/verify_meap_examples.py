@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the revised chapter examples and tests offline, in isolated processes."""
+"""Run the current MEAP examples and tests offline in isolated processes."""
 from pathlib import Path
 import os
 import subprocess
@@ -14,6 +14,7 @@ SUITES = (
     ('ch07-reflection', 'current_edition/tests'),
     ('ch08-collaboration', 'current_edition/tests'),
     ('ch09-governance', 'tests'),
+    ('ch10-methodology', 'tests'),
 )
 DEMOS = ('ch04-memory', 'ch06-action', 'ch07-reflection',
          'ch08-collaboration', 'ch09-governance')
@@ -46,7 +47,7 @@ def main() -> int:
     if failures:
         print('\nFailed: ' + ', '.join(failures), file=sys.stderr)
         return 1
-    print('\nAll revised chapter tests and offline demos passed.')
+    print('\nAll current MEAP tests and offline demos passed.')
     return 0
 
 

@@ -9,15 +9,11 @@ AI Agent 设计模式书。本仓库是全书的官方配套代码。
 
 English: [README.md](README.md)
 
-## 下一次 MEAP 更新的配套代码
+## 当前 MEAP 的配套代码
 
-本 `1st-review` 分支准备新版章节的代码，`main` 暂时继续对应已发布的旧版
-MEAP。新版第4、6、7、8、9章请先进入各章的 `current_edition/`，按章内
-README 查找 listing 和运行命令；旧的累计 Argus 接口保留用于兼容，不能与
-新版接口混用。第5章沿用已经同步的推理实现。
-
-具体入口和上线后的切换规则见 [本轮代码说明](docs/meap-update-2026-09.md)。
-各章使用独立 Python 进程；工作目录以各章 README 的命令为准。
+本仓库与 *Designing AI Agents* 2026 年 9 月 MEAP 更新版一致。
+[MEAP 代码指南](docs/meap-update-2026-09.md)列出了书中 Listing 对应的
+可运行源码和验证命令。
 
 > 如果你想按 7 × 6 双轴矩阵查找 28 个独立模式，而不是按书的章节阅读，
 > 请使用 [huangjia2019/agent-design-patterns](https://github.com/huangjia2019/agent-design-patterns)。
@@ -94,17 +90,12 @@ python3 patterns/context_triage.py
 ## 自检
 
 ```bash
+python3 tools/verify_meap_examples.py
 python3 tools/smoke_test.py
 ```
 
-当前基线：
-
-- **219/219** 个 Python 文件通过 AST 解析
-- **10/10** 个章节级 Argus 导入检查通过
-- 第 5 章另有 **16** 个离线行为测试（含 30 个累计快照子测试）
-
-冒烟测试验证语法和导入边界；涉及审批、路径约束、信任升级或多 Agent
-失败处理的行为，还应运行相应的语义测试。
+第一条命令运行与当前 MEAP 对应的离线行为测试；第二条命令检查全仓语法和
+章节级导入边界。涉及外部服务的示例还需按各章 README 配置相应依赖和凭据。
 
 ## 许可证与反馈
 

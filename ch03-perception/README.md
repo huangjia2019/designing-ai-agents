@@ -5,7 +5,7 @@ Four perception patterns and their integration into Argus.
 ```
 ch03-perception/
 ├── argus/
-│   └── perception.py                 # Listings 3.5a-e — Argus perception pipeline
+│   └── perception.py                 # Listings 3.5–3.8 — Argus perception pipeline
 └── patterns/
     ├── context_triage.py             # Listing 3.1 — priority-based window allocation
     ├── semantic_compaction.py        # Listing 3.2 — compress context, protect errors

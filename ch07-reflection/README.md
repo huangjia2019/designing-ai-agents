@@ -1,9 +1,9 @@
 # Chapter 7 — Reflection
 
-## Revised MEAP examples: start here
+## Current MEAP examples
 
-Start with [`current_edition/`](current_edition/README.md) for the revised
-chapter's 20 executable listings, an offline demo, and 39 regression tests.
+Start with [`current_edition/`](current_edition/README.md) for the chapter's
+20 executable listings, an offline demo, and 39 regression tests.
 It implements bounded Generator-Critic review and Self-Heal recovery,
 evidence-backed Skill Package admission and routing, and scoped Experience
 Replay. Python 3.10+ is required; no API key or extra packages are needed.

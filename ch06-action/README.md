@@ -1,15 +1,15 @@
 # Chapter 6 — Action
 
-## Revised MEAP examples: start here
+## Current MEAP examples
 
-The September 2026 revision teaches action as a bounded, verifiable state
-change. Its sixteen listings are assembled in
+Chapter 6 teaches action as a bounded, verifiable state change. Its sixteen
+listings are assembled in
 [`current_edition/action.py`](current_edition/action.py), in book order.
 The shared contract and evidence types stay in one module so readers can
 run the complete examples without resolving cross-listing imports.
 
 Use Python 3.10 or newer. No third-party package, model key, or payment
-provider is needed for the revised examples:
+provider is needed for these examples:
 
 ```bash
 cd ch06-action
@@ -58,11 +58,9 @@ do not provide operating-system isolation or a real payment integration.
 
 ## Earlier-edition compatibility
 
-The existing `argus/` and `patterns/` directories retain the preceding
-MEAP's cumulative coding-agent APIs. Later cumulative snapshots and older
-readers may still depend on them; they are **not the listing map for the
-revised chapter**. In particular, the old no-argument
-`argus.action.ArgusAction` and the revised
+The existing `argus/` and `patterns/` directories support the cumulative
+coding-agent demo; they are **not the listing map for the current chapter**.
+In particular, the no-argument `argus.action.ArgusAction` and
 `current_edition.action.ArgusAction(registry, guarded, commits)`
 are different interfaces.
 
@@ -72,11 +70,6 @@ The earlier cumulative CLI remains available:
 python3 -m argus.cli --diff-file some.diff --project demo
 ```
 
-That earlier CLI's live model path needs `ANTHROPIC_API_KEY` and its
+That CLI's live model path needs `ANTHROPIC_API_KEY` and its
 dependencies. Its optional MCP example requires the MCP SDK. None of
 those dependencies is needed for `current_edition`.
-
-While Manning prepares the revised MEAP, these examples are published on
-`1st-review`. `main` continues to support the prior published MEAP until
-the release is promoted. Historical code remains available through the
-repository's version history.

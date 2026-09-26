@@ -36,8 +36,8 @@ snapshot and append-only failure file demonstrate filesystem persistence.
 
 ## Listing → executable module
 
-The chapter's logical `patterns/` and `argus/` paths map to these current
-modules until the cumulative examples are integrated:
+The chapter's logical `patterns/` and `argus/` paths map to the executable
+files below:
 
 | Listing | Current executable file | Purpose |
 |---|---|---|

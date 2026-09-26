@@ -8,17 +8,13 @@
 
 This repository is the official source code for the book.
 
-## Preparing the next MEAP update
+## Current MEAP companion code
 
-This `1st-review` branch includes the revised chapter implementations.
-`main` remains on the earlier published MEAP until the new update is live.
-Start with the [September code-update guide](docs/meap-update-2026-09.md)
-to find the listing map and runnable entry point for your chapter. Chapters
-4, 6, 7, 8, and 9 have explicit `current_edition/` packages; their older
-cumulative examples are retained for compatibility.
+This repository matches the September 2026 MEAP update of *Designing AI
+Agents*. The [MEAP code guide](docs/meap-update-2026-09.md) maps each book
+listing to its runnable source file and verification command.
 
-Alongside these revised listing packages, two existing tracks live side
-by side inside each chapter:
+The examples are organized in two tracks:
 
 - **`argus/`** — Argus, the running-example PR-review agent, evolves
   **cumulatively** from Ch2 to Ch10. Each chapter adds **one cognitive

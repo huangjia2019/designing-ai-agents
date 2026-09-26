@@ -1,6 +1,6 @@
 # Chapter 8 — Collaboration
 
-## Revised MEAP examples: start here
+## Current MEAP examples
 
 The September 2026 chapter's seven listings are implemented under
 [`current_edition/`](current_edition/). A subagent receives a fresh
@@ -62,11 +62,6 @@ model quality, benchmark speedup or production security.
 
 ## Earlier-edition compatibility
 
-The existing top-level `argus/`, `patterns/` and `demos/` remain
-available for the earlier cumulative coding-agent examples and their
-downstream callers. They are not the revised chapter's listing entry
-points. Start from `current_edition/` when reading the updated MEAP.
-
-The review branch carries the revised examples while `main` supports
-the preceding published MEAP. The stable branch is promoted only after
-Manning releases the corresponding update.
+The top-level `argus/`, `patterns/` and `demos/` support the cumulative
+coding-agent examples. They are not the current chapter's listing entry
+points; start from `current_edition/` when following the MEAP.

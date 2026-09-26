@@ -1,6 +1,6 @@
 # Chapter 5 — Reasoning
 
-This revision implements four independent reasoning controls: represented
+Chapter 5 implements four independent reasoning controls: represented
 decision chains, difficulty routing, parallel exploration, and bounded
 hypothesis testing. It also keeps consequence policy separate from difficulty
 and returns an observable `ReasoningTrace` from Argus reviews.
@@ -63,9 +63,3 @@ requirements. The tests do not.
   test code still executes repository code.
 - Branch and investigation budgets may end without convergence. The explicit
   result is then `inconclusive`.
-
-## Version policy
-
-The `1st-review` branch carries the revised MEAP companion code. The stable
-`book-1st-edition` tag remains the reproducible snapshot for the currently
-published MEAP until the revised MEAP replaces it.
