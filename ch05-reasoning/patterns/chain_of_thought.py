@@ -52,14 +52,17 @@ The step now under review, as a structured record:
 Does this step follow from the steps above and from sound
 reasoning? Judge the step on its own merits, not on whether
 you like the conclusion it leads toward: a step that reaches a
-defensible answer through a leap of logic is still invalid.
+defensible answer through a leap of logic is still invalid,
+and that is the case worth catching here.
 
 Reply in exactly this format:
 VERDICT: SOUND | INVALID
 WHY: <one sentence naming the specific defect, or naming what
      makes the step hold>
 
-Use the word INVALID on the VERDICT line only.
+Use the word INVALID on the VERDICT line only. The caller
+scans this whole reply for that word, so a stray mention of it
+in your WHY line reads as a verdict against the step.
 """
 
 _UNRATED = 0.5

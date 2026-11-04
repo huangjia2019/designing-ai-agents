@@ -17,19 +17,20 @@ CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
 CLASSIFY_PROMPT = """Classify how much reasoning the query
 below needs.
 
-SIMPLE: a fact, lookup, formatting, or classification call
-  that can be answered directly.
-MODERATE: ordinary analysis or familiar multi-step work with
-  a known shape.
-COMPLEX: subtle debugging, architectural judgment, proofs, or
-  anything whose method is unclear.
+SIMPLE: a fact, a lookup, a formatting or classification
+  call that can be answered directly.
+MODERATE: summarizing, ordinary analysis, familiar
+  multi-step work with a known shape.
+COMPLEX: debugging subtle behavior, architectural
+  judgment, proofs, anything whose method is unclear.
 
-When torn between two difficulty tiers, choose the harder one.
-A separate consequence policy handles authorization, evidence,
-approval, and containment. Do not encode consequence here.
+When torn between two difficulty tiers, name the harder one.
+A false-simple route is harder to recover than modest
+over-routing. Consequence is handled by a separate policy
+before this classifier; do not encode authorization here.
 
-Length is not difficulty. "Is P=NP?" is COMPLEX; fifty records
-to sort by date is SIMPLE.
+Length is not difficulty. "Is P=NP?" is COMPLEX; fifty
+records to sort by date is SIMPLE.
 
 Answer with one word, SIMPLE or MODERATE or COMPLEX, and
 nothing else."""

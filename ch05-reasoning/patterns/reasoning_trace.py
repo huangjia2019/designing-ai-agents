@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ReasoningTrace:
-    """Observable record of one routed reasoning decision."""
+    """Observable record of reasoning decisions."""
 
     query_id: str
     classified_complexity: str

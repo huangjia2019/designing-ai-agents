@@ -37,8 +37,9 @@ EVAL_PROMPT = """A partial line of reasoning:
 
 Score how promising this path looks, from 0.00 (a dead end,
 or already wrong) to 1.00 (all but solved). The path is
-unfinished by design. Judge its direction, not whether it
-has arrived.
+unfinished by design, so judge the direction it is heading,
+not whether it has arrived. Reserve scores above 0.90 for
+paths whose remaining steps you could name.
 
 Reply in exactly this format:
 SCORE: <a number between 0.00 and 1.00>

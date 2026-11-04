@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def parse_check(path: Path) -> tuple[bool, str]:
     try:
-        ast.parse(path.read_text())
+        ast.parse(path.read_text(encoding="utf-8"))
         return True, ""
     except SyntaxError as e:
         return False, f"SyntaxError {e.lineno}: {e.msg}"

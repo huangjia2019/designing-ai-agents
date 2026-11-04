@@ -1,4 +1,4 @@
-"""Provider-neutral runtime seam for Chapter 8 collaboration patterns."""
+"""Executable Chapter 8 examples with a provider-neutral agent runtime."""
 
 from __future__ import annotations
 
@@ -152,7 +152,7 @@ class SharedWorkspace:
 
 
 class SubagentSpawner:
-    """Create fresh contexts from an agent spec, task, and tool set."""
+    """Creates fresh contexts from an agent spec, task, and tool set."""
 
     def __init__(
         self,

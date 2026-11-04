@@ -23,7 +23,7 @@ class SemanticCompactor:
         old = turns[:boundary]
         recent = turns[boundary:]
 
-        # Level 1: Clear verbose tool results in place (errors stay untouched)
+        # Level 1: Clear verbose tool results in place (errors untouched)
         cleared = self._clear_tools(old)
         if self._fits(cleared + recent, target):
             return cleared + recent

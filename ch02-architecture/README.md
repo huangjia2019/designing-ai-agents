@@ -35,8 +35,9 @@ python demos/adk_argus.py     # Same agent, Google ADK
 ```
 
 The OpenAI example reads a `sample.diff` file from the working directory;
-supply the diff you want to review. The LangGraph listing is a framework
-skeleton: the host must supply `llm` before invoking the compiled graph.
+supply the diff you want to review. The LangGraph listing defines `llm` with
+`ChatAnthropic`; it needs `pip install langchain-anthropic` and
+`ANTHROPIC_API_KEY` before you invoke the compiled graph.
 
 The small delivery test only parses and imports local code and checks the
 printed interface and model identifier. It makes no live API call:

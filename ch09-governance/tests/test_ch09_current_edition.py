@@ -192,7 +192,10 @@ class PolicyEnvelopeTests(unittest.TestCase):
         outside = self.root / "outside"
         outside.mkdir()
         link = self.allowed / "link"
-        link.symlink_to(outside, target_is_directory=True)
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except OSError:  # Windows needs Developer Mode or admin rights
+            self.skipTest("symlinks not permitted on this system")
         self.assertFalse(self.sandbox.validate_path(str(link / "file")))
 
     def test_all_host_path_keys_are_checked(self):

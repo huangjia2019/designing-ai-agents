@@ -31,7 +31,7 @@ class BranchReceipt:
 
 
 class DynamicFanOut:
-    """Expose fan_out as a tool that a lead model can call repeatedly."""
+    """Exposes fan_out as a tool that a lead model can call repeatedly."""
 
     def __init__(
         self,

@@ -21,7 +21,7 @@ class HumanReviewPacket:
 
 
 class SecurityReviewLoop:
-    """Share artifacts and claims, not conversation history."""
+    """Writer and reviewer share artifacts, not conversation history."""
 
     def __init__(
         self,
